@@ -73,6 +73,18 @@
 	name = "github.com/mvdan/xurls"
 	version = "2.0.0"
 
+[[constraint]]
+    name = "github.com/inconshreveable/log15"
+	branch = "master"
+
+[[constraint]]
+	name = "github.com/prometheus/client_golang"
+	version = "0.9.x"
+
+[[constraint]]
+    name = "github.com/go-redis/redis"
+    version = "6.14.2"
+
 [prune]
 	go-tests = true
 	unused-packages = true

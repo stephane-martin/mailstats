@@ -12,8 +12,8 @@ import (
 	"syscall"
 	"time"
 
-	gosmtp "github.com/emersion/go-smtp"
-	smtp "github.com/emersion/go-smtp"
+	"github.com/emersion/go-smtp"
+	"github.com/inconshreveable/log15"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
@@ -24,6 +24,7 @@ type SMTPArgs struct {
 	ListenPort     int
 	MaxMessageSize int
 	MaxIdle        int
+	Inetd          bool
 }
 
 func (args SMTPArgs) Verify() error {
@@ -43,30 +44,36 @@ func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
 	}
 	args.ListenPort = c.Int("lport")
 	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
-	args.MaxMessageSize = c.Int("maxsize")
-	args.MaxIdle = c.Int("maxidle")
+	args.MaxMessageSize = c.Int("max-size")
+	args.MaxIdle = c.Int("max-idle")
+	args.Inetd = c.GlobalBool("inetd")
 	return args
 }
 
 type Backend struct {
 	Collector Collector
 	Stop      <-chan struct{}
+	Logger    log15.Logger
 }
 
-func (b *Backend) Login(username, password string) (gosmtp.User, error) {
-	return &User{Collector: b.Collector, Stop: b.Stop}, nil
+func (b *Backend) Login(username, password string) (smtp.User, error) {
+	b.Logger.Debug("Authenticating user")
+	return &User{Collector: b.Collector, Stop: b.Stop, Logger: b.Logger}, nil
 }
 
-func (b *Backend) AnonymousLogin() (gosmtp.User, error) {
-	return &User{Collector: b.Collector, Stop: b.Stop}, nil
+func (b *Backend) AnonymousLogin() (smtp.User, error) {
+	b.Logger.Debug("Anonymous user")
+	return &User{Collector: b.Collector, Stop: b.Stop, Logger: b.Logger}, nil
 }
 
 type User struct {
 	Collector Collector
 	Stop      <-chan struct{}
+	Logger    log15.Logger
 }
 
 func (u *User) Send(from string, to []string, r io.Reader) error {
+	u.Logger.Info("Received SMTP message")
 	b, err := ioutil.ReadAll(r)
 	if err != nil {
 		return err
@@ -80,59 +87,94 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 }
 
 func (u *User) Logout() error {
+	u.Logger.Debug("User logged out")
 	return nil
 }
 
 func SMTP(c *cli.Context) error {
-	var args SMTPArgs
-	args.Populate(c)
-	err := args.Verify()
+	args, err := GetArgs(c)
 	if err != nil {
-		return cli.NewExitError(err.Error(), 1)
+		return err
 	}
-	queueSize := c.GlobalInt("queuesize")
-	if queueSize <= 0 {
-		queueSize = 10000
-	}
+	logger := args.Logging.Build()
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 	gctx, cancel := context.WithCancel(context.Background())
+
 	go func() {
-		for range sigchan {
+		for sig := range sigchan {
+			logger.Debug("Signal received", "signal", sig.String())
 			cancel()
 		}
 	}()
 
 	g, ctx := errgroup.WithContext(gctx)
-	collector := NewChanCollector(queueSize)
-	g.Go(func() error {
-		return Consume(ctx, collector)
-	})
+	collector := NewChanCollector(args.QueueSize, logger)
 
-	b := &Backend{Collector: collector, Stop: ctx.Done()}
+	b := &Backend{Collector: collector, Stop: ctx.Done(), Logger: logger}
 	s := smtp.NewServer(b)
 
-	s.Addr = net.JoinHostPort(args.ListenAddr, fmt.Sprintf("%d", args.ListenPort))
 	s.Domain = "localhost"
-	s.MaxIdleSeconds = args.MaxIdle
-	s.MaxMessageBytes = args.MaxMessageSize
+	s.MaxIdleSeconds = args.SMTP.MaxIdle
+	s.MaxMessageBytes = args.SMTP.MaxMessageSize
 	s.MaxRecipients = 0
 	s.AllowInsecureAuth = true
 
+	consumer, err := MakeConsumer(*args)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
+	}
+
 	g.Go(func() error {
+		defer func() {
+			// in case the s.Close() is called whereas s does not have yet a Listener
+			recover()
+		}()
 		<-ctx.Done()
 		s.Close()
 		return nil
 	})
 
+	if args.SMTP.Inetd {
+		g.Go(func() error {
+			return ParseMessages(ctx, collector, StdoutConsumer, logger)
+		})
+		logger.Debug("Starting SMTP service as inetd")
+		l := NewStdinListener()
+		g.Go(func() error {
+			err := s.Serve(l)
+			logger.Debug("Stopped SMTP service as inetd")
+			_ = collector.Close()
+			return err
+		})
+		return g.Wait()
+	}
+
+	var listener net.Listener
+	s.Addr = net.JoinHostPort(args.SMTP.ListenAddr, fmt.Sprintf("%d", args.SMTP.ListenPort))
+	listener, err = net.Listen("tcp", s.Addr)
+	if err != nil {
+		cancel()
+		return cli.NewExitError(fmt.Sprintf("Listen() has failed: %s", err), 2)
+	}
+	listener = WrapListener(listener, "SMTP", logger)
+
 	g.Go(func() error {
-		err := s.ListenAndServe()
-		collector.Close()
+		return StartHTTP(ctx, args.HTTP, logger)
+	})
+
+	g.Go(func() error {
+		return ParseMessages(ctx, collector, consumer, logger)
+	})
+
+	g.Go(func() error {
+		logger.Debug("Starting SMTP service")
+		err := s.Serve(listener)
+		logger.Debug("Stopped SMTP service")
+		_ = collector.Close()
 		return err
 	})
 
-	g.Wait()
-
-	return nil
+	return g.Wait()
 }

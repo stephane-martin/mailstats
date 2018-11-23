@@ -1,23 +1,79 @@
 package main
 
 import (
-	"fmt"
-	"os"
-
 	"github.com/urfave/cli"
 )
 
 func MakeApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "mailstats"
-	app.Usage = "generate logs and stats from SMTP traffic"
+	app.Usage = "generate logs and stats from mail traffic"
 	app.Flags = []cli.Flag{
 		cli.IntFlag{
-			Name:   "queuesize,q",
+			Name:   "queue-size,q",
 			Usage:  "size of the internal message queue",
 			Value:  10000,
 			EnvVar: "MAILSTATS_QUEUE_SIZE",
 		},
+		cli.StringFlag{
+			Name:   "http-addr",
+			Usage:  "HTTP listen address",
+			Value:  "127.0.0.1",
+			EnvVar: "MAILSTATS_HTTP_ADDR",
+		},
+		cli.IntFlag{
+			Name:   "http-port",
+			Usage:  "HTTP liten port",
+			Value:  8080,
+			EnvVar: "MAILSTATS_HTTP_PORT",
+		},
+		cli.BoolFlag{
+			Name:   "inetd",
+			Usage:  "Ignore the milter and SMTP port options and use the socket passed by inetd instead",
+			EnvVar: "MAILSTATS_INETD",
+		},
+		cli.BoolFlag{
+			Name:   "syslog",
+			Usage:  "write logs to syslog instead of stderr",
+			EnvVar: "MAILSTATS_SYSLOG",
+		},
+		cli.StringFlag{
+			Name:   "loglevel",
+			Value:  "info",
+			Usage:  "logging level",
+			EnvVar: "MAILSTATS_LOGLEVEL",
+		},
+		cli.StringFlag{
+			Name: "out,o",
+			Value: "stdout",
+			Usage: "where to write the results [stdout, stderr, file, redis, syslog]",
+			EnvVar: "MAILSTATS_OUT",
+		},
+		cli.StringFlag{
+			Name: "outfile",
+			Value: "/tmp/mailstats",
+			Usage: "when writing results to file, the filename",
+			EnvVar: "MAILSTATS_OUTFILE",
+		},
+		cli.StringFlag{
+			Name: "redis-addr",
+			Value: "127.0.0.1:6379",
+			Usage: "redis host:port",
+			EnvVar: "MAILSTATS_REDIS_ADDR",
+		},
+		cli.IntFlag{
+			Name: "redis-results",
+			Value: 0,
+			Usage: "which Redis database to write results to",
+			EnvVar: "MAILSTATS_REDIS_RESULTS",
+		},
+		cli.StringFlag{
+			Name: "redis-results-key",
+			Value: "mailstats",
+			Usage: "The key for the results list in redis",
+			EnvVar: "MAILSTATS_REDIS_RESULTS_KEY",
+		},
+
 	}
 	app.Version = Version
 	app.Commands = []cli.Command{
@@ -28,13 +84,13 @@ func MakeApp() *cli.App {
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
-					Usage:  "address to listen on",
+					Usage:  "milter address to listen on",
 					Value:  "127.0.0.1",
 					EnvVar: "MAILSTATS_MILTER_LISTENADDR",
 				},
 				cli.IntFlag{
 					Name:   "lport,p",
-					Usage:  "port to listen on",
+					Usage:  "milter port to listen on",
 					Value:  3333,
 					EnvVar: "MAILSTATS_MILTER_LISTENPORT",
 				},
@@ -47,41 +103,30 @@ func MakeApp() *cli.App {
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
-					Usage:  "address to listen on",
+					Usage:  "smtp address to listen on",
 					Value:  "127.0.0.1",
 					EnvVar: "MAILSTATS_SMTP_LISTENADDR",
 				},
 				cli.IntFlag{
 					Name:   "lport,p",
-					Usage:  "port to listen on",
+					Usage:  "smtp port to listen on",
 					Value:  3333,
 					EnvVar: "MAILSTATS_SMTP_LISTENPORT",
 				},
 				cli.IntFlag{
-					Name:   "maxsize",
+					Name:   "max-size",
 					Usage:  "Maximum incoming message size in bytes",
 					Value:  60 * 1024 * 1024,
 					EnvVar: "MAILTSATS_SMTP_MAXSIZE",
 				},
 				cli.IntFlag{
-					Name:  "maxidle",
+					Name:  "max-idle",
 					Usage: "Maximum idle time in seconds",
 					Value: 300,
 				},
 			},
 		},
-		{
-			Name:  "words",
-			Usage: "extract words",
-			Action: func(c *cli.Context) error {
-				bag := make(map[string]int)
-				bagOfWords(c.Args().Get(0), bag)
-				for word, count := range bag {
-					fmt.Fprintf(os.Stdout, "%s => %d\n", word, count)
-				}
-				return nil
-			},
-		},
+
 	}
 	return app
 }

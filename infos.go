@@ -17,6 +17,7 @@ import (
 
 	"github.com/abadojack/whatlanggo"
 	"github.com/h2non/filetype"
+	"github.com/inconshreveable/log15"
 	"github.com/jdkato/prose"
 	"github.com/kljensen/snowball"
 	"github.com/mvdan/xurls"
@@ -75,7 +76,7 @@ type ParsedInfos struct {
 	Images       []string            `json:"images,omitempty"`
 }
 
-func (i *Infos) Parse() (*ParsedInfos, error) {
+func (i *Infos) Parse(logger log15.Logger) (*ParsedInfos, error) {
 	m, err := mail.ReadMessage(strings.NewReader(i.Data))
 	if err != nil {
 		return nil, err
@@ -320,9 +321,9 @@ func html2text(h string) (text string, links []string, images []string) {
 
 func decodeBody(body io.Reader, charset string) string {
 	if charset != "" {
-		encoding, err := htmlindex.Get(charset)
+		encoder, err := htmlindex.Get(charset)
 		if err == nil {
-			r := encoding.NewDecoder().Reader(body)
+			r := encoder.NewDecoder().Reader(body)
 			res, err := ioutil.ReadAll(r)
 			if err == nil {
 				return string(res)

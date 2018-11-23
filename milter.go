@@ -20,6 +20,7 @@ import (
 type MilterArgs struct {
 	ListenAddr string
 	ListenPort int
+	Inetd      bool
 }
 
 func (args MilterArgs) Verify() error {
@@ -37,6 +38,7 @@ func (args *MilterArgs) Populate(c *cli.Context) *MilterArgs {
 	}
 	args.ListenPort = c.Int("lport")
 	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
+	args.Inetd = c.GlobalBool("inetd")
 	return args
 }
 
@@ -118,7 +120,7 @@ func (e *StatsMilter) Header(name, value string, m *milter.Modifier) (milter.Res
 func (e *StatsMilter) Headers(headers textproto.MIMEHeader, m *milter.Modifier) (milter.Response, error) {
 	for k, vl := range headers {
 		for _, v := range vl {
-			fmt.Fprintf(&e.message.builder, "%s: %s\n", k, v)
+			_, _ = fmt.Fprintf(&e.message.builder, "%s: %s\n", k, v)
 		}
 	}
 	return milter.RespContinue, nil
@@ -138,50 +140,78 @@ func (e *StatsMilter) Body(m *milter.Modifier) (milter.Response, error) {
 }
 
 func Milter(c *cli.Context) error {
-	var args MilterArgs
-	args.Populate(c)
-	err := args.Verify()
+	args, err := GetArgs(c)
+	if err != nil {
+		return err
+	}
+
+	var httpArgs HTTPArgs
+	httpArgs.Populate(c)
+	err = httpArgs.Verify()
 	if err != nil {
 		return cli.NewExitError(err.Error(), 1)
 	}
-	queueSize := c.GlobalInt("queuesize")
-	if queueSize <= 0 {
-		queueSize = 10000
-	}
-	conn, err := net.Listen("tcp", net.JoinHostPort(args.ListenAddr, fmt.Sprintf("%d", args.ListenPort)))
+
+	logger := args.Logging.Build()
+
+	consumer, err := MakeConsumer(*args)
 	if err != nil {
-		return cli.NewExitError(err.Error(), 2)
+		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
+
+	listener, err := net.Listen(
+		"tcp",
+		net.JoinHostPort(
+			args.Milter.ListenAddr,
+			fmt.Sprintf("%d", args.Milter.ListenPort),
+		),
+	)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Listen() has failed: %s", err), 2)
+	}
+	listener = WrapListener(listener, "milter", logger)
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 	gctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		for range sigchan {
+		for sig := range sigchan {
+			logger.Debug("Signal received", "signal", sig.String())
 			cancel()
 		}
 	}()
 
 	g, ctx := errgroup.WithContext(gctx)
-	collector := NewChanCollector(queueSize)
+	collector := NewChanCollector(args.QueueSize, logger)
+
 	g.Go(func() error {
-		return Consume(ctx, collector)
+		return ParseMessages(ctx, collector, consumer, logger)
+	})
+
+	g.Go(func() error {
+		return StartHTTP(ctx, httpArgs, logger)
 	})
 
 	g.Go(func() error {
 		<-ctx.Done()
-		conn.Close()
+		_ = listener.Close()
 		return nil
 	})
 
 	g.Go(func() error {
-		milter.RunServer(conn, func() (milter.Milter, milter.OptAction, milter.OptProtocol) {
+		logger.Info("Starting milter service")
+		err := milter.RunServer(listener, func() (milter.Milter, milter.OptAction, milter.OptProtocol) {
 			return &StatsMilter{collector: collector, stop: ctx.Done()}, 0, 0
 		})
-		return collector.Close()
+		logger.Info("Service milter stopped")
+		_ = collector.Close()
+		return err
 	})
 
-	g.Wait()
+	err = g.Wait()
+	if err != nil {
+		logger.Debug("Milter error after Wait()", "error", err)
+	}
 
 	return nil
 }
