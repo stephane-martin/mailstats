@@ -56,22 +56,22 @@ func MakeApp() *cli.App {
 			EnvVar: "MAILSTATS_OUTFILE",
 		},
 		cli.StringFlag{
-			Name: "redis-addr",
-			Value: "127.0.0.1:6379",
-			Usage: "redis host:port",
-			EnvVar: "MAILSTATS_REDIS_ADDR",
-		},
-		cli.IntFlag{
-			Name: "redis-results",
-			Value: 0,
-			Usage: "which Redis database to write results to",
-			EnvVar: "MAILSTATS_REDIS_RESULTS",
+			Name: "redis-url",
+			Value: "redis://127.0.0.1:6379?db=0",
+			Usage: "redis connection URL",
+			EnvVar: "MAILSTATS_REDIS_URL",
 		},
 		cli.StringFlag{
 			Name: "redis-results-key",
 			Value: "mailstats",
 			Usage: "The key for the results list in redis",
 			EnvVar: "MAILSTATS_REDIS_RESULTS_KEY",
+		},
+		cli.StringFlag{
+			Name: "forward",
+			Value: "",
+			Usage: "specify a SMTP connection URL (eg. smtp://127.0.0.1:25) to forward all received messages",
+			EnvVar: "MAILSTATS_FORWARD",
 		},
 
 	}

@@ -42,6 +42,14 @@
   revision = "7162b2ca3bcbc23985fd44e0b0a1fd80185119a6"
 
 [[projects]]
+  branch = "v2"
+  digest = "1:e096ada745e034a059752c202717baee0379b69db9473a90f59d103c973384cf"
+  name = "github.com/go-gomail/gomail"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "81ebce5c23dfd25c6c67194b37d3dd3f338c98b1"
+
+[[projects]]
   digest = "1:34a9a60fade37f8009ed4a19e02924198aba3eabfcc120ee5c6002b7de17212d"
   name = "github.com/go-redis/redis"
   packages = [
@@ -314,6 +322,14 @@
   revision = "d752f8fef7d8a1395483533e88a193258eade182"
 
 [[projects]]
+  branch = "v3"
+  digest = "1:7388652e2215a3f45d341d58766ed58317971030eb1cbd75f005f96ace8e9196"
+  name = "gopkg.in/alexcesaro/quotedprintable.v3"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2caba252f4dc53eaf6b553000885530023f54623"
+
+[[projects]]
   digest = "1:85b60f4403e2aae0eee2ac2ba50e4124dea766b582c6ec0d94fb1335d9c0d16e"
   name = "gopkg.in/neurosnap/sentences.v1"
   packages = [
@@ -329,7 +345,9 @@
   analyzer-version = 1
   input-imports = [
     "github.com/abadojack/whatlanggo",
+    "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
+    "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",
     "github.com/h2non/filetype",
     "github.com/inconshreveable/log15",

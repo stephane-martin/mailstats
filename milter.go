@@ -158,6 +158,10 @@ func Milter(c *cli.Context) error {
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
+	forwarder, err  := args.Forward.Build(logger)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
+	}
 
 	listener, err := net.Listen(
 		"tcp",
@@ -185,11 +189,11 @@ func Milter(c *cli.Context) error {
 	collector := NewChanCollector(args.QueueSize, logger)
 
 	g.Go(func() error {
-		return ParseMessages(ctx, collector, consumer, logger)
+		return ParseMessages(ctx, collector, consumer, forwarder, logger)
 	})
 
 	g.Go(func() error {
-		return StartHTTP(ctx, httpArgs, logger)
+		return StartHTTP(ctx, httpArgs, collector, logger)
 	})
 
 	g.Go(func() error {

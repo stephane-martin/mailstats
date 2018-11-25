@@ -61,7 +61,7 @@ type ParsedInfos struct {
 	BaseInfos
 	Size         int                 `json:"size"`
 	ContentType  string              `json:"content_type,omitempty"`
-	TimeReported string              `json:"timereported"`
+	TimeReported string              `json:"timereported,omitempty"`
 	Headers      map[string][]string `json:"headers,omitempty"`
 	Attachments  []Attachment        `json:"attachments,omitempty"`
 	BagOfWords   map[string]int      `json:"bag_of_words,omitempty"`
@@ -76,7 +76,7 @@ type ParsedInfos struct {
 	Images       []string            `json:"images,omitempty"`
 }
 
-func (i *Infos) Parse(logger log15.Logger) (*ParsedInfos, error) {
+func (i Infos) Parse(logger log15.Logger) (*ParsedInfos, error) {
 	m, err := mail.ReadMessage(strings.NewReader(i.Data))
 	if err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (i *Infos) Parse(logger log15.Logger) (*ParsedInfos, error) {
 	}
 	parsed.Size = len(i.Data)
 
-	contentType, plain, htmls, attachments := ParsePart(strings.NewReader(i.Data), "")
+	contentType, plain, htmls, attachments := ParsePart(strings.NewReader(i.Data), logger)
 	parsed.ContentType = contentType
 	parsed.Attachments = attachments
 	plain = filterPlain(plain)
@@ -360,26 +360,30 @@ func decodeUtf8(body io.Reader) (string, error) {
 	return string(res), nil
 }
 
-func ParsePart(part io.Reader, contentTypeHeader string) (string, string, []string, []Attachment) {
+func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, []Attachment) {
 	plain := ""
 	var htmls []string
 	var attachments []Attachment
 
+	partbody, err := ioutil.ReadAll(part)
+	part = bytes.NewReader(partbody)
+
 	msg, err := mail.ReadMessage(part)
 	if err != nil {
+		logger.Info("ReadMessage", "error", err)
 		return "", "", nil, nil
 	}
-	if len(contentTypeHeader) == 0 {
-		contentTypeHeader = strings.TrimSpace(msg.Header.Get("Content-Type"))
-	}
-	if len(contentTypeHeader) == 0 {
+	ctHeader := strings.TrimSpace(msg.Header.Get("Content-Type"))
+	if len(ctHeader) == 0 {
+		logger.Info("No Content-Type")
 		return "", "", nil, nil
 	}
-	contentType, params, err := mime.ParseMediaType(contentTypeHeader)
+	contentType, params, err := mime.ParseMediaType(ctHeader)
 	if err != nil {
+		logger.Info("Content-Type parsing error", "error", err)
 		return "", "", nil, nil
 	}
-	//fmt.Fprintln(os.Stderr, "ParsePart "+contentType)
+
 	charset := strings.TrimSpace(params["charset"])
 	if contentType == "text/plain" {
 		b := decodeBody(msg.Body, charset)
@@ -402,33 +406,43 @@ func ParsePart(part io.Reader, contentTypeHeader string) (string, string, []stri
 			break
 		}
 		if err != nil {
+			logger.Info("NextPart", "error", err)
 			continue
 		}
-		subct := strings.TrimSpace(subpart.Header.Get("Content-Type"))
-		if len(subct) == 0 {
+		subctHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
+		if len(subctHeader) == 0 {
+			logger.Info("NextPart: no Content-Type")
 			continue
 		}
-		subContentType, subParams, err := mime.ParseMediaType(subct)
+		subContentType, subParams, err := mime.ParseMediaType(subctHeader)
 		if err != nil {
-			continue
-		}
-		//fmt.Fprintln(os.Stderr, "NextPart "+subContentType)
-
-		if strings.HasPrefix(subContentType, "multipart/") {
-			_, subplain, subhtmls, subAttachments := ParsePart(subpart, subct)
-			plain = plain + subplain + "\n"
-			htmls = append(htmls, subhtmls...)
-			attachments = append(attachments, subAttachments...)
+			logger.Info("NextPart Content-Type parsing", "error", err)
 			continue
 		}
 
 		if strings.HasPrefix(subContentType, "message/") {
-			_, subplain, subhtmls, subAttachments := ParsePart(subpart, "")
+			_, subplain, subhtmls, subAttachments := ParsePart(subpart, logger)
 			plain = plain + subplain + "\n"
 			htmls = append(htmls, subhtmls...)
 			attachments = append(attachments, subAttachments...)
 			continue
 		}
+
+		if strings.HasPrefix(subContentType, "multipart/") {
+			_, subplain, subhtmls, subAttachments := ParsePart(
+				io.MultiReader(
+					strings.NewReader(fmt.Sprintf("Content-Type: %s\n\n", subctHeader)),
+					subpart,
+				),
+				logger,
+			)
+			plain = plain + subplain + "\n"
+			htmls = append(htmls, subhtmls...)
+			attachments = append(attachments, subAttachments...)
+			continue
+		}
+
+
 
 		fn := strings.TrimSpace(subpart.FileName())
 		if len(fn) == 0 {

@@ -9,6 +9,7 @@ type Args struct {
 	Redis RedisArgs
 	Consumer ConsumerArgs
 	Logging LoggingArgs
+	Forward ForwardArgs
 	QueueSize int
 }
 
@@ -46,6 +47,12 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	}
 
 	args.Logging.Populate(c)
+	err = args.Logging.Verify()
+	if err != nil {
+		return nil, cli.NewExitError(err.Error(), 1)
+	}
+
+	args.Forward.Populate(c)
 	err = args.Logging.Verify()
 	if err != nil {
 		return nil, cli.NewExitError(err.Error(), 1)

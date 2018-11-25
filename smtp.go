@@ -3,16 +3,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/emersion/go-smtp"
 	"io"
 	"io/ioutil"
 	"net"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/emersion/go-smtp"
 	"github.com/inconshreveable/log15"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
@@ -36,18 +35,6 @@ func (args SMTPArgs) Verify() error {
 	p := net.ParseIP(args.ListenAddr)
 	v.That(p != nil, "The listen address is invalid")
 	return v.GetError()
-}
-
-func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
-	if args == nil {
-		args = new(SMTPArgs)
-	}
-	args.ListenPort = c.Int("lport")
-	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
-	args.MaxMessageSize = c.Int("max-size")
-	args.MaxIdle = c.Int("max-idle")
-	args.Inetd = c.GlobalBool("inetd")
-	return args
 }
 
 type Backend struct {
@@ -97,6 +84,15 @@ func SMTP(c *cli.Context) error {
 		return err
 	}
 	logger := args.Logging.Build()
+	collector := NewChanCollector(args.QueueSize, logger)
+	forwarder, err  := args.Forward.Build(logger)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
+	}
+	consumer, err := MakeConsumer(*args)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
+	}
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
@@ -110,7 +106,6 @@ func SMTP(c *cli.Context) error {
 	}()
 
 	g, ctx := errgroup.WithContext(gctx)
-	collector := NewChanCollector(args.QueueSize, logger)
 
 	b := &Backend{Collector: collector, Stop: ctx.Done(), Logger: logger}
 	s := smtp.NewServer(b)
@@ -120,11 +115,6 @@ func SMTP(c *cli.Context) error {
 	s.MaxMessageBytes = args.SMTP.MaxMessageSize
 	s.MaxRecipients = 0
 	s.AllowInsecureAuth = true
-
-	consumer, err := MakeConsumer(*args)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
-	}
 
 	g.Go(func() error {
 		defer func() {
@@ -138,7 +128,7 @@ func SMTP(c *cli.Context) error {
 
 	if args.SMTP.Inetd {
 		g.Go(func() error {
-			return ParseMessages(ctx, collector, StdoutConsumer, logger)
+			return ParseMessages(ctx, collector, consumer, forwarder, logger)
 		})
 		logger.Debug("Starting SMTP service as inetd")
 		l := NewStdinListener()
@@ -161,11 +151,11 @@ func SMTP(c *cli.Context) error {
 	listener = WrapListener(listener, "SMTP", logger)
 
 	g.Go(func() error {
-		return StartHTTP(ctx, args.HTTP, logger)
+		return StartHTTP(ctx, args.HTTP, collector, logger)
 	})
 
 	g.Go(func() error {
-		return ParseMessages(ctx, collector, consumer, logger)
+		return ParseMessages(ctx, collector, consumer, forwarder, logger)
 	})
 
 	g.Go(func() error {
