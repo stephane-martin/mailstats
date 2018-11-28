@@ -8,6 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
+	"golang.org/x/text/encoding/htmlindex"
 	"io"
 	"mime"
 	"net"
@@ -77,25 +78,47 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			return
 		}
 		ct := r.Header.Get("Content-Type")
-		mt, _, err := mime.ParseMediaType(ct)
+		mt, params, err := mime.ParseMediaType(ct)
 		if err != nil {
 			logger.Warn("Error parsing media type", "error", err)
 			w.WriteHeader(400)
 			return
 		}
-		if mt != "multipart/form-data" {
-			logger.Warn("Incoming /messages is not multipart", "contenttype", mt)
+		if mt == "application/x-www-form-urlencoded" {
+			err := r.ParseForm()
+			if err != nil {
+				logger.Warn("Error parsing message from /messages HTTP endpoint", "error", err)
+				w.WriteHeader(500)
+				return
+			}
+		} else if mt == "multipart/form-data" {
+			err := r.ParseMultipartForm(67108864)
+			if err != nil {
+				logger.Warn("Error parsing message from /messages HTTP endpoint", "error", err)
+				w.WriteHeader(500)
+				return
+			}
+		} else {
+			logger.Warn("Incoming /messages is not multipart or urlencoded", "contenttype", mt)
 			w.WriteHeader(400)
 			return
 		}
-
-		err = r.ParseMultipartForm(67108864)
-		if err != nil {
-			logger.Warn("Error parsing message from /messages HTTP endpoint", "error", err)
-			w.WriteHeader(500)
-			return
+		charset := strings.TrimSpace(params["charset"])
+		if charset == "" {
+			charset = "utf-8"
 		}
-		// TODO: Content-Type and charset?
+		encoding, err := htmlindex.Get(charset)
+		if err != nil {
+			logger.Warn("Failed to get decoder", "charset", charset)
+		}
+		decoder := encoding.NewDecoder()
+		decode := func(s string) string  {
+			res, err := decoder.String(s)
+			if err != nil {
+				return s
+			}
+			return res
+		}
 
 		message := gomail.NewMessage(
 			gomail.SetCharset("utf8"),
@@ -105,12 +128,12 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		message.SetHeader("Date", message.FormatDate(now))
 
 		// from, to, cc, bcc, subject, text, html, attachment
-		from := strings.TrimSpace(r.Form.Get("from"))
+		from := strings.TrimSpace(decode(r.Form.Get("from")))
 		if len(from) > 0 {
-			r, err := mail.ParseAddress(from)
+			sender, err := mail.ParseAddress(from)
 			if err == nil {
-				from = r.Address
-				message.SetAddressHeader("From", r.Address, r.Name)
+				from = sender.Address
+				message.SetAddressHeader("From", sender.Address, sender.Name)
 			} else {
 				from = ""
 			}
@@ -118,9 +141,9 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 
 		to := make([]*mail.Address, 0, len(r.Form["to"]))
 		for _, recipient := range r.Form["to"] {
-			r, err := mail.ParseAddress(recipient)
+			recipientAddr, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
-				to = append(to, r)
+				to = append(to, recipientAddr)
 			}
 		}
 		encodedTo := make([]string, 0, len(to))
@@ -133,7 +156,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 
 		cc := make([]string, 0)
 		for _, recipient := range r.Form["cc"] {
-			r, err := mail.ParseAddress(recipient)
+			r, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				cc = append(cc, message.FormatAddress(r.Address, r.Name))
 			}
@@ -144,7 +167,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 
 		bcc := make([]string, 0)
 		for _, recipient := range r.Form["bcc"] {
-			r, err := mail.ParseAddress(recipient)
+			r, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				bcc = append(bcc, message.FormatAddress(r.Address, r.Name))
 			}
@@ -153,13 +176,13 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			message.SetHeader("Bcc", bcc...)
 		}
 
-		subject := r.Form.Get("subject")
+		subject := decode(r.Form.Get("subject"))
 		if len(subject) > 0 {
 			message.SetHeader("Subject", subject)
 		}
 
-		text := strings.TrimSpace(r.Form.Get("text"))
-		html := strings.TrimSpace(r.Form.Get("html"))
+		text := strings.TrimSpace(decode(r.Form.Get("text")))
+		html := strings.TrimSpace(decode(r.Form.Get("html")))
 
 		if len(text) > 0 && len(html) > 0 {
 			message.SetBody("text/plain", text)
@@ -170,17 +193,18 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			message.SetBody("text/html", html)
 		}
 
-		for _, fheader := range r.MultipartForm.File["attachment"] {
-			message.Attach(fheader.Filename, gomail.SetCopyFunc(func(w io.Writer) error {
-				f, err := fheader.Open()
-				if err != nil {
+		if r.MultipartForm != nil {
+			for _, fheader := range r.MultipartForm.File["attachment"] {
+				message.Attach(fheader.Filename, gomail.SetCopyFunc(func(w io.Writer) error {
+					f, err := fheader.Open()
+					if err != nil {
+						return err
+					}
+					defer func() { _ = f.Close() }()
+					_, err = io.Copy(w, f)
 					return err
-				}
-				defer func() { _ = f.Close() }()
-				_, err = io.Copy(w, f)
-				return err
-			}))
-
+				}))
+			}
 		}
 
 		var b strings.Builder
@@ -190,7 +214,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			w.WriteHeader(500)
 			return
 		}
-		infos := new(Infos)
+		infos := new(IncomingMail)
 		infos.Data = b.String()
 		infos.TimeReported = now
 		if len(from) > 0 {

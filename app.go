@@ -126,6 +126,11 @@ func MakeApp() *cli.App {
 				},
 			},
 		},
+		{
+			Name: "dump",
+			Usage: "start a debug HTTP server",
+			Action: Dump,
+		},
 
 	}
 	return app

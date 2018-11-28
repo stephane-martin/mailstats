@@ -64,8 +64,8 @@ func (m *milterMessage) Reset() {
 	m.builder.Reset()
 }
 
-func (m *milterMessage) make() *Infos {
-	info := new(Infos)
+func (m *milterMessage) make() *IncomingMail {
+	info := new(IncomingMail)
 	info.Host = m.host
 	info.Family = m.family
 	info.Port = m.port
@@ -189,7 +189,11 @@ func Milter(c *cli.Context) error {
 	collector := NewChanCollector(args.QueueSize, logger)
 
 	g.Go(func() error {
-		return ParseMessages(ctx, collector, consumer, forwarder, logger)
+		return forwarder.Start(ctx)
+	})
+
+	g.Go(func() error {
+		return ParseMails(ctx, collector, consumer, forwarder, logger)
 	})
 
 	g.Go(func() error {

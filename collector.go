@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"runtime"
 	"sync"
 
@@ -13,17 +12,17 @@ import (
 
 
 type Collector interface {
-	Push(stop <-chan struct{}, info *Infos) error
-	PushCtx(ctx context.Context, info *Infos) error
-	Pull(stop <-chan struct{}) (*Infos, error)
-	PullCtx(ctx context.Context) (*Infos, error)
+	Push(stop <-chan struct{}, info *IncomingMail) error
+	PushCtx(ctx context.Context, info *IncomingMail) error
+	Pull(stop <-chan struct{}) (*IncomingMail, error)
+	PullCtx(ctx context.Context) (*IncomingMail, error)
 	Close() error
 }
 
 
 
 type ChanCollector struct {
-	ch     chan *Infos
+	ch     chan *IncomingMail
 	once   sync.Once
 	logger log15.Logger
 }
@@ -32,14 +31,14 @@ func NewChanCollector(size int, logger log15.Logger) *ChanCollector {
 	c := new(ChanCollector)
 	c.logger = logger
 	if size <= 0 {
-		c.ch = make(chan *Infos)
+		c.ch = make(chan *IncomingMail)
 	} else {
-		c.ch = make(chan *Infos, size)
+		c.ch = make(chan *IncomingMail, size)
 	}
 	return c
 }
 
-func (c *ChanCollector) Push(stop <-chan struct{}, info *Infos) error {
+func (c *ChanCollector) Push(stop <-chan struct{}, info *IncomingMail) error {
 	select {
 	case c.ch <- info:
 		c.logger.Debug("New message pushed to collector")
@@ -49,11 +48,11 @@ func (c *ChanCollector) Push(stop <-chan struct{}, info *Infos) error {
 	}
 }
 
-func (c *ChanCollector) PushCtx(ctx context.Context, info *Infos) error {
+func (c *ChanCollector) PushCtx(ctx context.Context, info *IncomingMail) error {
 	return c.Push(ctx.Done(), info)
 }
 
-func (c *ChanCollector) Pull(stop <-chan struct{}) (*Infos, error) {
+func (c *ChanCollector) Pull(stop <-chan struct{}) (*IncomingMail, error) {
 	select {
 	case info, ok := <-c.ch:
 		if ok {
@@ -66,7 +65,7 @@ func (c *ChanCollector) Pull(stop <-chan struct{}) (*Infos, error) {
 	}
 }
 
-func (c *ChanCollector) PullCtx(ctx context.Context) (*Infos, error) {
+func (c *ChanCollector) PullCtx(ctx context.Context) (*IncomingMail, error) {
 	return c.Pull(ctx.Done())
 }
 
@@ -78,7 +77,7 @@ func (c *ChanCollector) Close() error {
 	return nil
 }
 
-func ParseMessages(ctx context.Context, collector Collector, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
+func ParseMails(ctx context.Context, collector Collector, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
 	defer func() { _ = consumer.Close() }()
 
 	var g errgroup.Group
@@ -86,29 +85,17 @@ func ParseMessages(ctx context.Context, collector Collector, consumer Consumer, 
 	for i := 0; i < cpus; i++ {
 		g.Go(func() error {
 			for {
-				info, err := collector.PullCtx(ctx)
-				if info == nil {
+				incoming, err := collector.PullCtx(ctx)
+				if incoming == nil {
 					return err
 				}
-				// TODO: refactor
-				copyInfo := *info
-				go func() {
-					err := forwarder.Forward(copyInfo)
-					if err != nil {
-						logger.Warn("Error forwarding message", "error", err)
-					}
-				}()
-				parsed, err := info.Parse(logger)
+				forwarder.Push(*incoming)
+				features, err := incoming.Parse(logger)
 				if err != nil {
 					logger.Info("Failed to parse message", "error", err)
 					continue
 				}
-				b, err := json.Marshal(parsed)
-				if err != nil {
-					logger.Error("Failed to marshal message information", "error", err)
-					continue
-				}
-				err = consumer.Consume(string(b))
+				err = consumer.Consume(features)
 				if err != nil {
 					logger.Error("Failed to consume parsing results", "error", err)
 					continue
@@ -118,6 +105,8 @@ func ParseMessages(ctx context.Context, collector Collector, consumer Consumer, 
 			}
 		})
 	}
-	return g.Wait()
+	err := g.Wait()
+	_ = forwarder.Close()
+	return err
 }
 

@@ -65,7 +65,7 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	infos := new(Infos)
+	infos := new(IncomingMail)
 	infos.MailFrom = from
 	infos.RcptTo = to
 	infos.Data = string(b)
@@ -117,6 +117,10 @@ func SMTP(c *cli.Context) error {
 	s.AllowInsecureAuth = true
 
 	g.Go(func() error {
+		return forwarder.Start(ctx)
+	})
+
+	g.Go(func() error {
 		defer func() {
 			// in case the s.Close() is called whereas s does not have yet a Listener
 			recover()
@@ -128,7 +132,7 @@ func SMTP(c *cli.Context) error {
 
 	if args.SMTP.Inetd {
 		g.Go(func() error {
-			return ParseMessages(ctx, collector, consumer, forwarder, logger)
+			return ParseMails(ctx, collector, consumer, forwarder, logger)
 		})
 		logger.Debug("Starting SMTP service as inetd")
 		l := NewStdinListener()
@@ -155,7 +159,7 @@ func SMTP(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return ParseMessages(ctx, collector, consumer, forwarder, logger)
+		return ParseMails(ctx, collector, consumer, forwarder, logger)
 	})
 
 	g.Go(func() error {

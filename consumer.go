@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
@@ -11,7 +12,7 @@ import (
 )
 
 type Consumer interface {
-	Consume(infos string) error
+	Consume(features FeaturesMail) error
 	Close() error
 }
 
@@ -87,9 +88,9 @@ type Writer struct {
 	io.WriteCloser
 }
 
-func (w Writer) Consume(infos string) error {
+func (w Writer) Consume(features FeaturesMail) (err error) {
 	printLock.Lock()
-	_, err := io.WriteString(w.WriteCloser, infos)
+	err = json.NewEncoder(w.WriteCloser).Encode(features)
 	printLock.Unlock()
 	return err
 }

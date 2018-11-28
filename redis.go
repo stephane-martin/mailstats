@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis"
 	"github.com/storozhukBM/verifier"
@@ -82,8 +83,12 @@ func NewRedisConsumer(args RedisArgs) (*RedisConsumer, error) {
 	return &RedisConsumer{client: client, args: args}, nil
 }
 
-func (c *RedisConsumer) Consume(infos string) error {
-	_, err := c.client.RPush(c.args.ResultsKey, infos).Result()
+func (c *RedisConsumer) Consume(features FeaturesMail) error {
+	b, err := json.Marshal(features)
+	if err != nil {
+		return err
+	}
+	_, err = c.client.RPush(c.args.ResultsKey, b).Result()
 	return err
 }
 

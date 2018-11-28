@@ -38,7 +38,7 @@ type BaseInfos struct {
 	Helo     string   `json:"helo,omitempty"`
 }
 
-type Infos struct {
+type IncomingMail struct {
 	BaseInfos
 	TimeReported time.Time `json:"timereported"`
 	Data         string    `json:"data,omitempty"`
@@ -46,7 +46,7 @@ type Infos struct {
 
 type Attachment struct {
 	Name         string `json:"name,omitempty"`
-	InferedType  string `json:"infered_type,omitempty"`
+	InferredType string `json:"inferred_type,omitempty"`
 	ReportedType string `json:"reported_type,omitempty"`
 	Size         int    `json:"size"`
 	Hash         string `json:"hash,omitempty"`
@@ -57,7 +57,7 @@ type Address struct {
 	Address string `json:"address,omitempty"`
 }
 
-type ParsedInfos struct {
+type FeaturesMail struct {
 	BaseInfos
 	Size         int                 `json:"size"`
 	ContentType  string              `json:"content_type,omitempty"`
@@ -76,12 +76,11 @@ type ParsedInfos struct {
 	Images       []string            `json:"images,omitempty"`
 }
 
-func (i Infos) Parse(logger log15.Logger) (*ParsedInfos, error) {
+func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error) {
 	m, err := mail.ReadMessage(strings.NewReader(i.Data))
 	if err != nil {
-		return nil, err
+		return parsed, err
 	}
-	parsed := new(ParsedInfos)
 	parsed.BaseInfos = i.BaseInfos
 	parsed.TimeReported = i.TimeReported.Format(time.RFC3339)
 	parsed.Headers = make(map[string][]string)
@@ -482,7 +481,7 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 		h := sha256.Sum256(partBody)
 		attachments = append(attachments, Attachment{
 			Name:         filename,
-			InferedType:  inferedType,
+			InferredType: inferedType,
 			ReportedType: subContentType,
 			Size:         len(partBody),
 			Hash:         hex.EncodeToString(h[:]),
