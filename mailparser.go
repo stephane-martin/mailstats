@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/abadojack/whatlanggo"
 	"github.com/h2non/filetype"
@@ -36,25 +37,12 @@ type BaseInfos struct {
 	Port     int      `json:"port"`
 	Addr     string   `json:"addr,omitempty"`
 	Helo     string   `json:"helo,omitempty"`
+	TimeReported time.Time `json:"timereported,omitempty"`
 }
 
 type IncomingMail struct {
 	BaseInfos
-	TimeReported time.Time `json:"timereported"`
 	Data         string    `json:"data,omitempty"`
-}
-
-type Attachment struct {
-	Name         string `json:"name,omitempty"`
-	InferredType string `json:"inferred_type,omitempty"`
-	ReportedType string `json:"reported_type,omitempty"`
-	Size         int    `json:"size"`
-	Hash         string `json:"hash,omitempty"`
-}
-
-type Address struct {
-	Name    string `json:"name,omitempty"`
-	Address string `json:"address,omitempty"`
 }
 
 type FeaturesMail struct {
@@ -76,7 +64,76 @@ type FeaturesMail struct {
 	Images       []string            `json:"images,omitempty"`
 }
 
-func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error) {
+type Attachment struct {
+	Name          string      `json:"name,omitempty"`
+	InferredType  string      `json:"inferred_type,omitempty"`
+	ReportedType  string      `json:"reported_type,omitempty"`
+	Size          int         `json:"size"`
+	Hash          string      `json:"hash,omitempty"`
+	PDFMetadata   interface{} `json:"pdf_metadata,omitempty"`
+	ImageMetadata interface{} `json:"image_metadata,omitempty"`
+}
+
+type Address struct {
+	Name    string `json:"name,omitempty"`
+	Address string `json:"address,omitempty"`
+}
+
+var stopWordsEnglish map[string]struct{}
+var stopWordsFrench map[string]struct{}
+
+func init() {
+	enB, err := Asset("data/stopwords-en.txt")
+	if err != nil {
+		panic(err)
+	}
+	enF, err := Asset("data/stopwords-fr.txt")
+	if err != nil {
+		panic(err)
+	}
+	stopWordsEnglish = make(map[string]struct{})
+	stopWordsFrench = make(map[string]struct{})
+	for _, word := range strings.Split(string(enB), "\n") {
+		word = strings.ToLower(strings.TrimSpace(word))
+		if len(word) > 0 {
+			stopWordsEnglish[word] = struct{}{}
+		}
+	}
+	for _, word := range strings.Split(string(enF), "\n") {
+		word = strings.ToLower(strings.TrimSpace(word))
+		if len(word) > 0 {
+			stopWordsFrench[normalize(word)] = struct{}{}
+		}
+	}
+}
+
+type Parser interface {
+	Parse(i *IncomingMail) (FeaturesMail, error)
+	Close() error
+}
+
+type parserImpl struct {
+	logger log15.Logger
+	tool   *ExifToolWrapper
+}
+
+func NewParser(logger log15.Logger) *parserImpl {
+	tool, err := NewExifToolWrapper()
+	if err != nil {
+		logger.Info("Failed to locate exiftool", "error", err)
+		return &parserImpl{logger: logger}
+	}
+	return &parserImpl{logger: logger, tool: tool}
+}
+
+func (p *parserImpl) Close() error {
+	if p.tool != nil {
+		return p.tool.Close()
+	}
+	return nil
+}
+
+func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
 	m, err := mail.ReadMessage(strings.NewReader(i.Data))
 	if err != nil {
 		return parsed, err
@@ -91,6 +148,7 @@ func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error
 		for _, v := range vl {
 			decv, err := StringDecode(v)
 			if err != nil {
+				p.logger.Debug("Error decoding header value", "key", k, "value", v, "error", err)
 				continue
 			}
 			parsed.Headers[k] = append(parsed.Headers[k], decv)
@@ -98,7 +156,7 @@ func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error
 	}
 	parsed.Size = len(i.Data)
 
-	contentType, plain, htmls, attachments := ParsePart(strings.NewReader(i.Data), logger)
+	contentType, plain, htmls, attachments := ParsePart(strings.NewReader(i.Data), p.tool, p.logger)
 	parsed.ContentType = contentType
 	parsed.Attachments = attachments
 	plain = filterPlain(plain)
@@ -119,6 +177,8 @@ func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error
 	if len(plain) == 0 {
 		plain = ahtml
 	}
+	// unicode normalization
+	plain = normalize(plain)
 
 	urls = append(urls, xurls.Relaxed().FindAllString(plain, -1)...)
 	urls = append(urls, xurls.Relaxed().FindAllString(ahtml, -1)...)
@@ -133,13 +193,28 @@ func (i IncomingMail) Parse(logger log15.Logger) (parsed FeaturesMail, err error
 	if len(plain) > 0 {
 		parsed.BagOfWords = make(map[string]int)
 		bagOfWords(plain, parsed.BagOfWords)
-		langinfo := whatlanggo.Detect(plain)
-		if langinfo.Script != nil && langinfo.Lang != -1 {
-			parsed.Language = strings.ToLower(whatlanggo.Langs[langinfo.Lang])
+		langInfo := whatlanggo.Detect(plain)
+		if langInfo.Script != nil && langInfo.Lang != -1 {
+			parsed.Language = strings.ToLower(whatlanggo.Langs[langInfo.Lang])
 		}
 	}
 
 	if len(parsed.Language) > 0 {
+		switch parsed.Language {
+		case "english":
+			for word := range parsed.BagOfWords {
+				if _, ok := stopWordsEnglish[word]; ok {
+					delete(parsed.BagOfWords, word)
+				}
+			}
+		case "french":
+			for word := range parsed.BagOfWords {
+				if _, ok := stopWordsFrench[word]; ok {
+					delete(parsed.BagOfWords, word)
+				}
+			}
+		default:
+		}
 		parsed.BagOfStems = make(map[string]int)
 		for word := range parsed.BagOfWords {
 			stem, err := snowball.Stem(word, parsed.Language, true)
@@ -247,17 +322,24 @@ func extractWords(text string) (words []string) {
 	return words
 }
 
-var abbrs []string = []string{"t'", "s'", "d'", "j'", "l'", "m'", "c'", "n'"}
+var abbrs = []string{"t'", "s'", "d'", "j'", "l'", "m'", "c'", "n'", "qu'", "«"}
 
 func filterWord(w string) string {
 	w = strings.ToLower(w)
 	for _, abbr := range abbrs {
-		w = strings.TrimPrefix(w, abbr)
+		for {
+			w2 := strings.TrimPrefix(w, abbr)
+			if w2 == w {
+				break
+			}
+			w = w2
+		}
 	}
-	if len(w) <= 3 {
+	w = strings.TrimSuffix(w, "»")
+	if utf8.RuneCountInString(w) <= 3 {
 		return ""
 	}
-	if strings.ContainsAny(w, "<>0123456789_-~#{}[]()|`^=+°&$£µ%/:;,?§!.@") {
+	if strings.ContainsAny(w, "«<>0123456789_-~#{}[]()|`^=+°&$£µ%/:;,?§!.@") {
 		return ""
 	}
 	return w
@@ -359,13 +441,10 @@ func decodeUtf8(body io.Reader) (string, error) {
 	return string(res), nil
 }
 
-func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, []Attachment) {
+func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (string, string, []string, []Attachment) {
 	plain := ""
 	var htmls []string
 	var attachments []Attachment
-
-	partbody, err := ioutil.ReadAll(part)
-	part = bytes.NewReader(partbody)
 
 	msg, err := mail.ReadMessage(part)
 	if err != nil {
@@ -420,7 +499,7 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 		}
 
 		if strings.HasPrefix(subContentType, "message/") {
-			_, subplain, subhtmls, subAttachments := ParsePart(subpart, logger)
+			_, subplain, subhtmls, subAttachments := ParsePart(subpart, tool, logger)
 			plain = plain + subplain + "\n"
 			htmls = append(htmls, subhtmls...)
 			attachments = append(attachments, subAttachments...)
@@ -433,6 +512,7 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 					strings.NewReader(fmt.Sprintf("Content-Type: %s\n\n", subctHeader)),
 					subpart,
 				),
+				tool,
 				logger,
 			)
 			plain = plain + subplain + "\n"
@@ -440,8 +520,6 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 			attachments = append(attachments, subAttachments...)
 			continue
 		}
-
-
 
 		fn := strings.TrimSpace(subpart.FileName())
 		if len(fn) == 0 {
@@ -471,10 +549,31 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 			}
 		}
 		inferedType := ""
-		//fmt.Fprintln(os.Stderr, string(partBody))
+		var pdfMetadata interface{}
+		var imageMetadata interface{}
 		typ, err := filetype.Match(partBody)
 		if err == nil {
 			inferedType = typ.MIME.Value
+			logger.Debug("Attachment", "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
+			switch typ.MIME.Subtype {
+			case "pdf":
+				m, err := PDFBytesInfo(partBody)
+				if err != nil {
+					logger.Warn("Error extracting metadata from PDF", "error", err)
+				} else {
+					pdfMetadata = m
+				}
+			case "png", "jpeg", "webp", "gif":
+				if tool != nil {
+					meta, err := tool.Extract(partBody)
+					if err != nil {
+						logger.Warn("Failed to extract metadata with exiftool", "error", err)
+					} else {
+						imageMetadata = meta
+					}
+				}
+			}
+
 		} else {
 			//fmt.Fprintln(os.Stderr, "FILETYPE ERROR: "+err.Error())
 		}
@@ -485,6 +584,8 @@ func ParsePart(part io.Reader, logger log15.Logger) (string, string, []string, [
 			ReportedType: subContentType,
 			Size:         len(partBody),
 			Hash:         hex.EncodeToString(h[:]),
+			PDFMetadata:  pdfMetadata,
+			ImageMetadata: imageMetadata,
 		})
 	}
 	return contentType, plain, htmls, attachments
@@ -501,6 +602,12 @@ func NewDecoder() *mime.WordDecoder {
 			dec = charmap.KOI8R.NewDecoder()
 		case "windows-1251":
 			dec = charmap.Windows1251.NewDecoder()
+		case "windows-1252":
+			dec = charmap.Windows1252.NewDecoder()
+		case "windows-1258":
+			dec = charmap.Windows1258.NewDecoder()
+		case "iso-8859-15":
+			dec = charmap.ISO8859_15.NewDecoder()
 		default:
 			return nil, fmt.Errorf("unhandled charset %q", charset)
 		}

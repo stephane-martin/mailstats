@@ -131,6 +131,17 @@ func MakeApp() *cli.App {
 			Usage: "start a debug HTTP server",
 			Action: Dump,
 		},
+		{
+			Name: "pdfinfo",
+			Usage: "extract metadata from PDF",
+			Action: PDFInfoAction,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "filename, f",
+					Usage: "PDF file to analyze",
+				},
+			},
+		},
 
 	}
 	return app

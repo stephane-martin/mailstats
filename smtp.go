@@ -116,6 +116,8 @@ func SMTP(c *cli.Context) error {
 	s.MaxRecipients = 0
 	s.AllowInsecureAuth = true
 
+	parser := NewParser(logger)
+
 	g.Go(func() error {
 		return forwarder.Start(ctx)
 	})
@@ -132,7 +134,11 @@ func SMTP(c *cli.Context) error {
 
 	if args.SMTP.Inetd {
 		g.Go(func() error {
-			return ParseMails(ctx, collector, consumer, forwarder, logger)
+			err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
+			_ = consumer.Close()
+			_ = forwarder.Close()
+			_ = parser.Close()
+			return err
 		})
 		logger.Debug("Starting SMTP service as inetd")
 		l := NewStdinListener()
@@ -159,7 +165,11 @@ func SMTP(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return ParseMails(ctx, collector, consumer, forwarder, logger)
+		err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
+		_ = consumer.Close()
+		_ = forwarder.Close()
+		_ = parser.Close()
+		return err
 	})
 
 	g.Go(func() error {

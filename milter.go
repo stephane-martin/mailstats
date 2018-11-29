@@ -185,6 +185,8 @@ func Milter(c *cli.Context) error {
 		}
 	}()
 
+	parser := NewParser(logger)
+
 	g, ctx := errgroup.WithContext(gctx)
 	collector := NewChanCollector(args.QueueSize, logger)
 
@@ -193,7 +195,11 @@ func Milter(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return ParseMails(ctx, collector, consumer, forwarder, logger)
+		err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
+		_ = consumer.Close()
+		_ = forwarder.Close()
+		_ = parser.Close()
+		return err
 	})
 
 	g.Go(func() error {
@@ -207,11 +213,11 @@ func Milter(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		logger.Info("Starting milter service")
+		logger.Info("Starting Milter service")
 		err := milter.RunServer(listener, func() (milter.Milter, milter.OptAction, milter.OptProtocol) {
 			return &StatsMilter{collector: collector, stop: ctx.Done()}, 0, 0
 		})
-		logger.Info("Service milter stopped")
+		logger.Info("Service Milter stopped")
 		_ = collector.Close()
 		return err
 	})

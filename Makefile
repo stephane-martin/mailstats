@@ -1,6 +1,6 @@
 .POSIX:
 .SUFFIXES:
-.PHONY: debug release vet clean version
+.PHONY: debug release vet clean version tools
 .SILENT: version
 
 SOURCES = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
@@ -24,10 +24,13 @@ clean:
 version:
 	echo ${VERSION}
 
-${BINARY}_debug: ${SOURCES} 
+${BINARY}_debug: ${SOURCES}
+	go-bindata data/
 	go build -x -tags netgo -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
-${BINARY}: ${SOURCES} 
+${BINARY}: ${SOURCES}
+	go-bindata data/
 	go build -a -installsuffix nocgo -tags netgo -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
-
+tools:
+	go get -u github.com/kevinburke/go-bindata/go-bindata

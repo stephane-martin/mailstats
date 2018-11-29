@@ -66,6 +66,14 @@
     name = "github.com/go-gomail/gomail"
     branch = "v2"
 
+[[constraint]]
+    name = "github.com/go-cmd/cmd"
+    version = "1.0.4"
+
+[[constraint]]
+    name = "github.com/mostlygeek/go-exiftool"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

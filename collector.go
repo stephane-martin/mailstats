@@ -77,8 +77,7 @@ func (c *ChanCollector) Close() error {
 	return nil
 }
 
-func ParseMails(ctx context.Context, collector Collector, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
-	defer func() { _ = consumer.Close() }()
+func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
 
 	var g errgroup.Group
 	cpus := runtime.NumCPU()
@@ -90,7 +89,7 @@ func ParseMails(ctx context.Context, collector Collector, consumer Consumer, for
 					return err
 				}
 				forwarder.Push(*incoming)
-				features, err := incoming.Parse(logger)
+				features, err := parser.Parse(incoming)
 				if err != nil {
 					logger.Info("Failed to parse message", "error", err)
 					continue
@@ -105,8 +104,6 @@ func ParseMails(ctx context.Context, collector Collector, consumer Consumer, for
 			}
 		})
 	}
-	err := g.Wait()
-	_ = forwarder.Close()
-	return err
+	return g.Wait()
 }
 

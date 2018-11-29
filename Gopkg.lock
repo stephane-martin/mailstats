@@ -42,6 +42,14 @@
   revision = "7162b2ca3bcbc23985fd44e0b0a1fd80185119a6"
 
 [[projects]]
+  digest = "1:c3957c9c9dc7beb125fdc93c920957d0305fe66dc48712a600f8790ce9354254"
+  name = "github.com/go-cmd/cmd"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "db1a8287640cedff487674c2f4439805b58f42aa"
+  version = "v1.0.4"
+
+[[projects]]
   branch = "v2"
   digest = "1:e096ada745e034a059752c202717baee0379b69db9473a90f59d103c973384cf"
   name = "github.com/go-gomail/gomail"
@@ -169,6 +177,14 @@
   version = "0.3.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:bb1fc4f42f344d96598e9bac81434b7d89032ae0b323aa632d9adc41b3477dc4"
+  name = "github.com/mostlygeek/go-exiftool"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2ef098095ac715e2b9d9e49f9f0240fbd860e1e5"
+
+[[projects]]
   digest = "1:0d72291ecb10a37e75f0484eb8e700b0cffbd2501f6e63b282028dcc7830d33c"
   name = "github.com/mvdan/xurls"
   packages = ["."]
@@ -183,6 +199,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "ddacab85d2fa3e5259615c3996b0364a605d747e"
+
+[[projects]]
+  digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
+  name = "github.com/pkg/errors"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "645ef00459ed84a119197bfb8d8205042c6df63d"
+  version = "v0.8.0"
 
 [[projects]]
   digest = "1:26663fafdea73a38075b07e8e9d82fc0056379d2be8bb4e13899e8fda7c7dd23"
@@ -274,7 +298,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:e0ecf92722206929511338ca09d5385e2d85dcae78e083e148df10a19e0adea7"
+  digest = "1:57c454c228fe055726851a66d5ae6f417a821f74380b572f6beb54acd1cda76f"
   name = "golang.org/x/text"
   packages = [
     "encoding",
@@ -291,11 +315,14 @@
     "internal/language",
     "internal/language/compact",
     "internal/tag",
+    "internal/triegen",
+    "internal/ucd",
     "internal/utf8internal",
     "language",
     "runes",
     "transform",
     "unicode/cldr",
+    "unicode/norm",
   ]
   pruneopts = "UT"
   revision = "6f44c5a2ea40ee3593d98cdcc905cc1fdaa660e2"
@@ -347,12 +374,14 @@
     "github.com/abadojack/whatlanggo",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
+    "github.com/go-cmd/cmd",
     "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",
     "github.com/h2non/filetype",
     "github.com/inconshreveable/log15",
     "github.com/jdkato/prose",
     "github.com/kljensen/snowball",
+    "github.com/mostlygeek/go-exiftool",
     "github.com/mvdan/xurls",
     "github.com/phalaaxx/milter",
     "github.com/prometheus/client_golang/prometheus",
@@ -365,6 +394,7 @@
     "golang.org/x/text/encoding/charmap",
     "golang.org/x/text/encoding/htmlindex",
     "golang.org/x/text/encoding/unicode",
+    "golang.org/x/text/unicode/norm",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1
