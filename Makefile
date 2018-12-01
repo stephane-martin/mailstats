@@ -4,6 +4,7 @@
 .SILENT: version
 
 SOURCES = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+DATAFILES = $(shell find data -type f)
 
 BINARY=mailstats
 FULL=github.com/stephane-martin/mailstats
@@ -24,13 +25,18 @@ clean:
 version:
 	echo ${VERSION}
 
-${BINARY}_debug: ${SOURCES}
-	go-bindata data/
+${BINARY}_debug: bindata.go incoming_gen.go ${SOURCES}
 	go build -x -tags netgo -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
-${BINARY}: ${SOURCES}
-	go-bindata data/
+${BINARY}: bindata.go incoming_gen.go ${SOURCES}
 	go build -a -installsuffix nocgo -tags netgo -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
 tools:
 	go get -u github.com/kevinburke/go-bindata/go-bindata
+	go get -u github.com/tinylib/msgp
+
+bindata.go: ${DATAFILES}
+	go-bindata data/
+
+incoming_gen.go: incoming.go
+	msgp -file incoming.go

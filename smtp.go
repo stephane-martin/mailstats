@@ -45,12 +45,20 @@ type Backend struct {
 
 func (b *Backend) Login(username, password string) (smtp.User, error) {
 	b.Logger.Debug("Authenticating user")
-	return &User{Collector: b.Collector, Stop: b.Stop, Logger: b.Logger}, nil
+	return &User{
+		Collector: b.Collector,
+		Stop:      b.Stop,
+		Logger:    b.Logger,
+	}, nil
 }
 
 func (b *Backend) AnonymousLogin() (smtp.User, error) {
 	b.Logger.Debug("Anonymous user")
-	return &User{Collector: b.Collector, Stop: b.Stop, Logger: b.Logger}, nil
+	return &User{
+		Collector: b.Collector,
+		Stop:      b.Stop,
+		Logger:    b.Logger,
+	}, nil
 }
 
 type User struct {
@@ -68,8 +76,9 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	infos := new(IncomingMail)
 	infos.MailFrom = from
 	infos.RcptTo = to
-	infos.Data = string(b)
+	infos.Data = b
 	infos.TimeReported = time.Now()
+	infos.UID = NewULID()
 	return u.Collector.Push(u.Stop, infos)
 }
 
@@ -84,8 +93,12 @@ func SMTP(c *cli.Context) error {
 		return err
 	}
 	logger := args.Logging.Build()
-	collector := NewChanCollector(args.QueueSize, logger)
-	forwarder, err  := args.Forward.Build(logger)
+	collector, err := NewCollector(args, logger)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
+	}
+
+	forwarder, err := args.Forward.Build(logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
 	}
@@ -100,7 +113,7 @@ func SMTP(c *cli.Context) error {
 
 	go func() {
 		for sig := range sigchan {
-			logger.Debug("Signal received", "signal", sig.String())
+			logger.Info("Signal received", "signal", sig.String())
 			cancel()
 		}
 	}()
@@ -119,7 +132,9 @@ func SMTP(c *cli.Context) error {
 	parser := NewParser(logger)
 
 	g.Go(func() error {
-		return forwarder.Start(ctx)
+		err := forwarder.Start(ctx)
+		logger.Info("forwarder has returned", "error", err)
+		return err
 	})
 
 	g.Go(func() error {
@@ -161,7 +176,9 @@ func SMTP(c *cli.Context) error {
 	listener = WrapListener(listener, "SMTP", logger)
 
 	g.Go(func() error {
-		return StartHTTP(ctx, args.HTTP, collector, logger)
+		err := StartHTTP(ctx, args.HTTP, collector, logger)
+		logger.Info("StartHTTP has returned", "error", err)
+		return err
 	})
 
 	g.Go(func() error {
@@ -169,6 +186,7 @@ func SMTP(c *cli.Context) error {
 		_ = consumer.Close()
 		_ = forwarder.Close()
 		_ = parser.Close()
+		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})
 

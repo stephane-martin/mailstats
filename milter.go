@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net"
@@ -50,7 +51,7 @@ type milterMessage struct {
 	helo    string
 	from    string
 	to      []string
-	builder strings.Builder
+	builder bytes.Buffer
 }
 
 func (m *milterMessage) Reset() {
@@ -73,8 +74,9 @@ func (m *milterMessage) make() *IncomingMail {
 	info.Helo = m.helo
 	info.MailFrom = m.from
 	info.RcptTo = append(info.RcptTo, m.to...)
-	info.Data = m.builder.String()
+	info.Data = m.builder.Bytes()
 	info.TimeReported = time.Now()
+	info.UID = NewULID()
 	m.Reset()
 	return info
 }
@@ -186,9 +188,12 @@ func Milter(c *cli.Context) error {
 	}()
 
 	parser := NewParser(logger)
+	collector, err := NewCollector(args, logger)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
+	}
 
 	g, ctx := errgroup.WithContext(gctx)
-	collector := NewChanCollector(args.QueueSize, logger)
 
 	g.Go(func() error {
 		return forwarder.Start(ctx)

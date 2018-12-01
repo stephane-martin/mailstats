@@ -9,12 +9,6 @@ func MakeApp() *cli.App {
 	app.Name = "mailstats"
 	app.Usage = "generate logs and stats from mail traffic"
 	app.Flags = []cli.Flag{
-		cli.IntFlag{
-			Name:   "queue-size,q",
-			Usage:  "size of the internal message queue",
-			Value:  10000,
-			EnvVar: "MAILSTATS_QUEUE_SIZE",
-		},
 		cli.StringFlag{
 			Name:   "http-addr",
 			Usage:  "HTTP listen address",
@@ -72,6 +66,24 @@ func MakeApp() *cli.App {
 			Value: "",
 			Usage: "specify a SMTP connection URL (eg. smtp://127.0.0.1:25) to forward all received messages",
 			EnvVar: "MAILSTATS_FORWARD",
+		},
+		cli.StringFlag{
+			Name: "collector",
+			Value: "channel",
+			Usage: "The kind of collector to use (channel or filesystem)",
+			EnvVar: "MAILSTATS_COLLECTOR",
+		},
+		cli.IntFlag{
+			Name:   "collector-size",
+			Usage:  "size of the collector queue (for channel collector)",
+			Value:  10000,
+			EnvVar: "MAILSTATS_COLLECTOR_SIZE",
+		},
+		cli.StringFlag{
+			Name: "collector-dir",
+			Value: "/var/lib/mailstats",
+			Usage: "Where to store the incoming mails (for filesystem collector)",
+			EnvVar: "MAILSTATS_COLLECTOR_DIRECTORY",
 		},
 
 	}

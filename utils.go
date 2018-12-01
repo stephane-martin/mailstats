@@ -2,15 +2,39 @@ package main
 
 import (
 	"golang.org/x/text/unicode/norm"
+	"io"
 	"io/ioutil"
+	"math/rand"
 	"os"
 	"sync"
+	"github.com/oklog/ulid"
+	"time"
 )
+
+var rsource rand.Source
+var rrand *rand.Rand
+var mono io.Reader
+var ulidChan chan ulid.ULID
+
+func init() {
+	rsource = rand.NewSource(1)
+	rrand = rand.New(rsource)
+	mono = ulid.Monotonic(rrand, 0)
+	ulidChan = make(chan ulid.ULID)
+
+	go func() {
+		for {
+			ulidChan <- ulid.MustNew(ulid.Timestamp(time.Now()), mono)
+		}
+	}()
+}
 
 type TempFile struct {
 	name string
 	l sync.Mutex
 }
+
+
 
 func NewTempFile(content []byte) (*TempFile, error) {
 	f, err := ioutil.TempFile("", "mailstats-*")
@@ -48,4 +72,8 @@ func (t *TempFile) Remove() (err error) {
 
 func normalize(s string) string {
 	return norm.NFKC.String(s)
+}
+
+func NewULID() ulid.ULID {
+	return <-ulidChan
 }

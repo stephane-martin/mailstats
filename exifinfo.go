@@ -4,10 +4,11 @@ import (
 	"encoding/json"
 	"github.com/mostlygeek/go-exiftool"
 	"os/exec"
+	"runtime"
 )
 
 type ExifToolWrapper struct {
-	tool *exiftool.Stayopen
+	tool *exiftool.Pool
 }
 
 func NewExifToolWrapper() (*ExifToolWrapper, error) {
@@ -15,7 +16,7 @@ func NewExifToolWrapper() (*ExifToolWrapper, error) {
 	if err != nil {
 		return nil, err
 	}
-	t, err := exiftool.NewStayOpen(path, "-json")
+	t, err := exiftool.NewPool(path, runtime.NumCPU(), "-json")
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +41,7 @@ func (w *ExifToolWrapper) Extract(content []byte) (map[string]interface{}, error
 	if err != nil {
 		return nil, err
 	}
-	defer temp.Remove()
+	defer func() { _ = temp.Remove() }()
 	return w.ExtractFromFile(temp.Name())
 }
 

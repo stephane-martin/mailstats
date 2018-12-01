@@ -35,22 +35,22 @@ func PDFInfoAction(c *cli.Context) error {
 }
 
 type PDFMeta struct {
-	Title string `json:"title,omitempty"`
-	Author string `json:"author,omitempty"`
-	Creator string `json:"creator,omitempty"`
-	Producer string `json:"producer,omitempty"`
-	CreationDate *time.Time `json:"creation_date,omitempty"`
-	ModDate *time.Time `json:"mod_date,omitempty"`
-	Tagged bool `json:"tagged"`
-	UserProperties bool `json:"user_properties"`
-	Form string `json:"form,omitempty"`
-	Javascript bool `json:"javascript"`
-	Pages int `json:"pages"`
-	Encrypted bool `json:"encrypted"`
-	PageSize string `json:"page_size,omitempty"`
-	FileSize int `json:"file_size"`
-	Optimized bool `json:"optimized"`
-	Version string `json:"version,omitempty"`
+	Title          string     `json:"title,omitempty"`
+	Author         string     `json:"author,omitempty"`
+	Creator        string     `json:"creator,omitempty"`
+	Producer       string     `json:"producer,omitempty"`
+	CreationDate   *time.Time `json:"creation_date,omitempty"`
+	ModDate        *time.Time `json:"mod_date,omitempty"`
+	Tagged         bool       `json:"tagged"`
+	UserProperties bool       `json:"user_properties"`
+	Form           string     `json:"form,omitempty"`
+	Javascript     bool       `json:"javascript"`
+	Pages          int        `json:"pages"`
+	Encrypted      bool       `json:"encrypted"`
+	PageSize       string     `json:"page_size,omitempty"`
+	FileSize       int        `json:"file_size"`
+	Optimized      bool       `json:"optimized"`
+	Version        string     `json:"version,omitempty"`
 }
 
 func PDFInfo(filename string) (*PDFMeta, error) {
@@ -140,6 +140,6 @@ func PDFBytesInfo(pdf []byte) (*PDFMeta, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer temp.Remove()
+	defer func() { _ = temp.Remove() }()
 	return PDFInfo(temp.Name())
 }

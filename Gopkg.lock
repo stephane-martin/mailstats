@@ -42,6 +42,14 @@
   revision = "7162b2ca3bcbc23985fd44e0b0a1fd80185119a6"
 
 [[projects]]
+  digest = "1:abeb38ade3f32a92943e5be54f55ed6d6e3b6602761d74b4aab4c9dd45c18abd"
+  name = "github.com/fsnotify/fsnotify"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c2828203cd70a50dcccfb2761f8b1f8ceef9a8e9"
+  version = "v1.4.7"
+
+[[projects]]
   digest = "1:c3957c9c9dc7beb125fdc93c920957d0305fe66dc48712a600f8790ce9354254"
   name = "github.com/go-cmd/cmd"
   packages = ["."]
@@ -194,11 +202,35 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:cdc33c982f0dadfc7472e5be7164341891b6a1b450026cc4718e7b85b7e0dae1"
+  name = "github.com/nwaples/rardecode"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "197ef08ef68c4454ae5970a9c2692d6056ceb8d7"
+
+[[projects]]
+  digest = "1:4f5513cb656b73fb4c4f77ccd482c8366d6290278564d2b1d3285f45e45f4a1e"
+  name = "github.com/oklog/ulid"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "02a8604050d8466dd915307496174adb9be4593a"
+  version = "v1.3.1"
+
+[[projects]]
+  branch = "master"
   digest = "1:ee17941a5735b6d19dba62d5b56c8a4d86361714bd947aa26a0b62e4c10f90bb"
   name = "github.com/phalaaxx/milter"
   packages = ["."]
   pruneopts = "UT"
   revision = "ddacab85d2fa3e5259615c3996b0364a605d747e"
+
+[[projects]]
+  digest = "1:5e73b34a27d827212102605789de00bd411b2e434812133c83935fe9897c75e1"
+  name = "github.com/philhofer/fwd"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "bb6d471dc95d4fe11e432687f8b70ff496cf3136"
+  version = "v1.0.0"
 
 [[projects]]
   digest = "1:40e195917a951a8bf867cd05de2a46aaf1806c50cf92eebf4c16f78cd196f747"
@@ -260,6 +292,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "694d046345c0bd70098b213be5f8e0fa19f9d402"
+
+[[projects]]
+  branch = "master"
+  digest = "1:c97e8a5e5c435c3287f581cdb4441ba34577ec6ead8422bfedafa6269af7abf6"
+  name = "github.com/tinylib/msgp"
+  packages = ["msgp"]
+  pruneopts = "UT"
+  revision = "af6442a0fcf6e2a1b824f70dd0c734f01e817751"
 
 [[projects]]
   digest = "1:b24d38b282bacf9791408a080f606370efa3d364e4b5fd9ba0f7b87786d3b679"
@@ -374,19 +414,25 @@
     "github.com/abadojack/whatlanggo",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
+    "github.com/fsnotify/fsnotify",
     "github.com/go-cmd/cmd",
     "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",
     "github.com/h2non/filetype",
+    "github.com/h2non/filetype/matchers",
+    "github.com/h2non/filetype/types",
     "github.com/inconshreveable/log15",
     "github.com/jdkato/prose",
     "github.com/kljensen/snowball",
     "github.com/mostlygeek/go-exiftool",
     "github.com/mvdan/xurls",
+    "github.com/nwaples/rardecode",
+    "github.com/oklog/ulid",
     "github.com/phalaaxx/milter",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/storozhukBM/verifier",
+    "github.com/tinylib/msgp/msgp",
     "github.com/urfave/cli",
     "golang.org/x/net/html",
     "golang.org/x/sync/errgroup",

@@ -1,16 +1,21 @@
 package main
 
-import "github.com/urfave/cli"
+import (
+	"github.com/urfave/cli"
+	"strings"
+)
 
 type Args struct {
-	SMTP SMTPArgs
-	Milter MilterArgs
-	HTTP HTTPArgs
-	Redis RedisArgs
-	Consumer ConsumerArgs
-	Logging LoggingArgs
-	Forward ForwardArgs
-	QueueSize int
+	SMTP          SMTPArgs
+	Milter        MilterArgs
+	HTTP          HTTPArgs
+	Redis         RedisArgs
+	Consumer      ConsumerArgs
+	Logging       LoggingArgs
+	Forward       ForwardArgs
+	Collector     string
+	CollectorSize int
+	CollectorDir  string
 }
 
 func GetArgs(c *cli.Context) (*Args, error) {
@@ -58,9 +63,22 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		return nil, cli.NewExitError(err.Error(), 1)
 	}
 
-	args.QueueSize = c.GlobalInt("queue-size")
-	if args.QueueSize <= 0 {
-		args.QueueSize = 10000
+	args.Collector = strings.ToLower(c.GlobalString("collector"))
+	if args.Collector == "" {
+		args.Collector = "channel"
+	}
+	if args.Collector != "filesystem" && args.Collector != "channel" {
+		return nil, cli.NewExitError("Unknown collector type", 1)
+	}
+
+	args.CollectorDir = c.GlobalString("collector-dir")
+	if args.CollectorDir == "" {
+		args.CollectorDir = "/var/lib/mailstats"
+	}
+
+	args.CollectorSize = c.GlobalInt("collector-size")
+	if args.CollectorSize <= 0 {
+		args.CollectorSize = 10000
 	}
 
 	return args, nil

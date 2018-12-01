@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
-	"runtime"
+	"errors"
 	"sync"
 
 	"github.com/inconshreveable/log15"
-	"golang.org/x/sync/errgroup"
 )
 
 
@@ -19,23 +18,77 @@ type Collector interface {
 	Close() error
 }
 
+func NewCollector(args *Args, logger log15.Logger) (Collector, error) {
+	logger.Debug("Collector", "type", args.Collector)
+	switch args.Collector {
+	case "channel":
+		return NewChanCollector(args.CollectorSize, logger)
+	case "filesystem":
+		return NewFSCollector(args.CollectorDir, logger)
+	default:
+		return nil, errors.New("unknown collector")
+	}
+}
+
+type FSCollector struct {
+	store *FileStore
+}
+
+func NewFSCollector(root string, logger log15.Logger) (*FSCollector, error) {
+	store, err := NewFileStore(root, logger)
+	if err != nil {
+		return nil, err
+	}
+	return &FSCollector{store: store}, nil
+}
+
+func (c *FSCollector) Push(stop <-chan struct{}, info *IncomingMail) error {
+	return c.store.New(info.UID, info)
+}
+
+func (c *FSCollector) PushCtx(ctx context.Context, info *IncomingMail) error {
+	return c.Push(ctx.Done(), info)
+}
+
+func (c *FSCollector) Pull(stop <-chan struct{}) (*IncomingMail, error) {
+	mail := new(IncomingMail)
+	err := c.store.Get(stop, mail)
+	if err != nil {
+		return nil, err
+	}
+	return mail, nil
+}
+
+func (c *FSCollector) PullCtx(ctx context.Context) (*IncomingMail, error) {
+	return c.Pull(ctx.Done())
+}
+
+func (c *FSCollector) Close() error {
+	return c.store.Close()
+}
 
 
 type ChanCollector struct {
 	ch     chan *IncomingMail
 	once   sync.Once
 	logger log15.Logger
+	store *FileStore
 }
 
-func NewChanCollector(size int, logger log15.Logger) *ChanCollector {
+func NewChanCollector(size int, logger log15.Logger) (*ChanCollector, error) {
 	c := new(ChanCollector)
 	c.logger = logger
+	store, err := NewFileStore("/home/stef/tmp/mailstats", logger)
+	if err != nil {
+		logger.Error("Error creating store", "error", err)
+	}
+	c.store = store
 	if size <= 0 {
 		c.ch = make(chan *IncomingMail)
 	} else {
 		c.ch = make(chan *IncomingMail, size)
 	}
-	return c
+	return c, nil
 }
 
 func (c *ChanCollector) Push(stop <-chan struct{}, info *IncomingMail) error {
@@ -77,33 +130,5 @@ func (c *ChanCollector) Close() error {
 	return nil
 }
 
-func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
 
-	var g errgroup.Group
-	cpus := runtime.NumCPU()
-	for i := 0; i < cpus; i++ {
-		g.Go(func() error {
-			for {
-				incoming, err := collector.PullCtx(ctx)
-				if incoming == nil {
-					return err
-				}
-				forwarder.Push(*incoming)
-				features, err := parser.Parse(incoming)
-				if err != nil {
-					logger.Info("Failed to parse message", "error", err)
-					continue
-				}
-				err = consumer.Consume(features)
-				if err != nil {
-					logger.Error("Failed to consume parsing results", "error", err)
-					continue
-				}
-				logger.Info("Parsing results sent to consumer")
-
-			}
-		})
-	}
-	return g.Wait()
-}
 

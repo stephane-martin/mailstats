@@ -2,16 +2,23 @@ package main
 
 import (
 	"bytes"
+	"compress/bzip2"
+	"compress/gzip"
+	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"github.com/h2non/filetype/matchers"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/mail"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -29,29 +36,13 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-type BaseInfos struct {
-	MailFrom string   `json:"mail_from,omitempty"`
-	RcptTo   []string `json:"rcpt_to,omitempty"`
-	Host     string   `json:"host,omitempty"`
-	Family   string   `json:"family,omitempty"`
-	Port     int      `json:"port"`
-	Addr     string   `json:"addr,omitempty"`
-	Helo     string   `json:"helo,omitempty"`
-	TimeReported time.Time `json:"timereported,omitempty"`
-}
-
-type IncomingMail struct {
-	BaseInfos
-	Data         string    `json:"data,omitempty"`
-}
-
 type FeaturesMail struct {
 	BaseInfos
 	Size         int                 `json:"size"`
 	ContentType  string              `json:"content_type,omitempty"`
 	TimeReported string              `json:"timereported,omitempty"`
 	Headers      map[string][]string `json:"headers,omitempty"`
-	Attachments  []Attachment        `json:"attachments,omitempty"`
+	Attachments  []*Attachment       `json:"attachments,omitempty"`
 	BagOfWords   map[string]int      `json:"bag_of_words,omitempty"`
 	BagOfStems   map[string]int      `json:"bag_of_stems,omitempty"`
 	Language     string              `json:"language,omitempty"`
@@ -65,13 +56,15 @@ type FeaturesMail struct {
 }
 
 type Attachment struct {
-	Name          string      `json:"name,omitempty"`
-	InferredType  string      `json:"inferred_type,omitempty"`
-	ReportedType  string      `json:"reported_type,omitempty"`
-	Size          int         `json:"size"`
-	Hash          string      `json:"hash,omitempty"`
-	PDFMetadata   interface{} `json:"pdf_metadata,omitempty"`
-	ImageMetadata interface{} `json:"image_metadata,omitempty"`
+	Name          string                 `json:"name,omitempty"`
+	InferredType  string                 `json:"inferred_type,omitempty"`
+	ReportedType  string                 `json:"reported_type,omitempty"`
+	Size          uint64                 `json:"size"`
+	Hash          string                 `json:"hash,omitempty"`
+	PDFMetadata   *PDFMeta               `json:"pdf_metadata,omitempty"`
+	ImageMetadata map[string]interface{} `json:"image_metadata,omitempty"`
+	Archives      map[string]*Archive    `json:"archive_content,omitempty"`
+	SubAttachment *Attachment            `json:"sub_attachment,omitempty"`
 }
 
 type Address struct {
@@ -134,7 +127,7 @@ func (p *parserImpl) Close() error {
 }
 
 func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
-	m, err := mail.ReadMessage(strings.NewReader(i.Data))
+	m, err := mail.ReadMessage(bytes.NewReader(i.Data))
 	if err != nil {
 		return parsed, err
 	}
@@ -156,7 +149,7 @@ func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
 	}
 	parsed.Size = len(i.Data)
 
-	contentType, plain, htmls, attachments := ParsePart(strings.NewReader(i.Data), p.tool, p.logger)
+	contentType, plain, htmls, attachments := ParsePart(bytes.NewReader(i.Data), p.tool, p.logger)
 	parsed.ContentType = contentType
 	parsed.Attachments = attachments
 	plain = filterPlain(plain)
@@ -441,10 +434,10 @@ func decodeUtf8(body io.Reader) (string, error) {
 	return string(res), nil
 }
 
-func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (string, string, []string, []Attachment) {
+func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (string, string, []string, []*Attachment) {
 	plain := ""
 	var htmls []string
-	var attachments []Attachment
+	var attachments []*Attachment
 
 	msg, err := mail.ReadMessage(part)
 	if err != nil {
@@ -538,57 +531,91 @@ func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (stri
 		if err != nil {
 			continue
 		}
-		partBody, err := ioutil.ReadAll(subpart)
-		if err != nil {
-			continue
-		}
+		var subPartReader io.Reader = subpart
 		if subpart.Header.Get("Content-Transfer-Encoding") == "base64" {
-			decoded, err := base64.StdEncoding.DecodeString(string(partBody))
-			if err == nil {
-				partBody = decoded
-			}
+			subPartReader = base64.NewDecoder(base64.StdEncoding, subPartReader)
 		}
-		inferedType := ""
-		var pdfMetadata interface{}
-		var imageMetadata interface{}
-		typ, err := filetype.Match(partBody)
+		attachment, err := AnalyseAttachment(filename, subPartReader, tool, logger)
 		if err == nil {
-			inferedType = typ.MIME.Value
-			logger.Debug("Attachment", "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
-			switch typ.MIME.Subtype {
-			case "pdf":
-				m, err := PDFBytesInfo(partBody)
-				if err != nil {
-					logger.Warn("Error extracting metadata from PDF", "error", err)
-				} else {
-					pdfMetadata = m
-				}
-			case "png", "jpeg", "webp", "gif":
-				if tool != nil {
-					meta, err := tool.Extract(partBody)
-					if err != nil {
-						logger.Warn("Failed to extract metadata with exiftool", "error", err)
-					} else {
-						imageMetadata = meta
-					}
-				}
-			}
-
-		} else {
-			//fmt.Fprintln(os.Stderr, "FILETYPE ERROR: "+err.Error())
+			attachment.ReportedType = subContentType
+			attachments = append(attachments, attachment)
 		}
-		h := sha256.Sum256(partBody)
-		attachments = append(attachments, Attachment{
-			Name:         filename,
-			InferredType: inferedType,
-			ReportedType: subContentType,
-			Size:         len(partBody),
-			Hash:         hex.EncodeToString(h[:]),
-			PDFMetadata:  pdfMetadata,
-			ImageMetadata: imageMetadata,
-		})
 	}
 	return contentType, plain, htmls, attachments
+}
+
+func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper, logger log15.Logger) (*Attachment, error) {
+	content, err := ioutil.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+	attachment := &Attachment{Name: filename, Size: uint64(len(content))}
+	h := sha256.Sum256(content)
+	attachment.Hash = hex.EncodeToString(h[:])
+
+	typ, err := filetype.Match(content)
+	if err != nil {
+		return nil, err
+	}
+	attachment.InferredType = typ.MIME.Value
+	logger.Debug("Attachment", "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
+
+	switch typ {
+	case matchers.TypePdf:
+		m, err := PDFBytesInfo(content)
+		if err != nil {
+			logger.Warn("Error extracting metadata from PDF", "error", err)
+		} else {
+			attachment.PDFMetadata = m
+		}
+	case matchers.TypePng, matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
+		if tool != nil {
+			meta, err := tool.Extract(content)
+			if err != nil {
+				logger.Warn("Failed to extract metadata with exiftool", "error", err)
+			} else {
+				attachment.ImageMetadata = meta
+			}
+		}
+	case matchers.TypeZip, matchers.TypeTar:
+		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size)
+		if err != nil {
+			logger.Warn("Error analyzing archive", "error", err)
+		} else {
+			if attachment.Archives == nil {
+				attachment.Archives = make(map[string]*Archive)
+			}
+			attachment.Archives[filename] = archive
+		}
+
+	case matchers.TypeGz:
+		gzReader, err := gzip.NewReader(bytes.NewReader(content))
+		if err != nil {
+			// TODO
+		} else {
+			if strings.HasSuffix(filename, ".gz") {
+				filename = filename[:len(filename)-3]
+			}
+			subAttachment, err := AnalyseAttachment(filename, gzReader, tool, logger)
+			if err != nil {
+				// TODO
+			} else {
+				attachment.SubAttachment = subAttachment
+			}
+		}
+	case matchers.TypeBz2:
+		bz2Reader := bzip2.NewReader(bytes.NewReader(content))
+		if strings.HasSuffix(filename, ".bz2") {
+			filename = filename[:len(filename)-4]
+		}
+		subAttachment, err := AnalyseAttachment(filename, bz2Reader, tool, logger)
+		if err != nil {
+			// TODO
+		} else {
+			attachment.SubAttachment = subAttachment
+		}
+	}
+	return attachment, nil
 }
 
 func NewDecoder() *mime.WordDecoder {
@@ -647,4 +674,41 @@ func StringDecode(text string) (string, error) {
 		}
 	}
 	return strings.Join(words, " "), nil
+}
+
+func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
+	g, lctx := errgroup.WithContext(ctx)
+	cpus := runtime.NumCPU()
+
+	for i := 0; i < cpus; i++ {
+		g.Go(func() error {
+		L:
+			for {
+				incoming, err := collector.PullCtx(lctx)
+				if err == context.Canceled {
+					return err
+				}
+				if err != nil {
+					logger.Warn("Error fetching mail from collector", "error", err)
+					continue L
+				}
+				if incoming == nil {
+					return errors.New("incoming mail is nil :(")
+				}
+				forwarder.Push(*incoming)
+				features, err := parser.Parse(incoming)
+				if err != nil {
+					logger.Info("Failed to parse message", "error", err)
+					continue L
+				}
+				err = consumer.Consume(features)
+				if err != nil {
+					logger.Warn("Failed to consume parsing results", "error", err)
+					continue
+				}
+				logger.Info("Parsing results sent to consumer")
+			}
+		})
+	}
+	return g.Wait()
 }

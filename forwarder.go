@@ -9,7 +9,6 @@ import (
 	"github.com/inconshreveable/log15"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
-	"io"
 	"net"
 	"net/url"
 	"strings"
@@ -139,6 +138,7 @@ func (_ DummyForwarder) Close() error {
 }
 
 func (_ DummyForwarder) Start(ctx context.Context) error {
+	<-ctx.Done()
 	return nil
 }
 
@@ -219,7 +219,7 @@ func _forward(email IncomingMail, client *smtp.Client) (err error) {
 	if err != nil {
 		return fmt.Errorf("error at DATA: %s", err)
 	}
-	_, err = io.WriteString(w, email.Data)
+	_, err = w.Write(email.Data)
 	_ = w.Close()
 	if err != nil {
 		return fmt.Errorf("error writing DATA: %s", err)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -36,6 +37,7 @@ func (args HTTPArgs) Verify() error {
 
 func (args *HTTPArgs) Populate(c *cli.Context) *HTTPArgs {
 	if args == nil {
+		//noinspection GoAssignmentToReceiver
 		args = new(HTTPArgs)
 	}
 	args.ListenPort = c.GlobalInt("http-port")
@@ -115,10 +117,10 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			return res
 		}
 
-		var message string
+		var message []byte
 		f, _, err := r.FormFile("message")
 		if err == http.ErrMissingFile {
-			message = decode(r.FormValue("message"))
+			message = []byte(decode(r.FormValue("message")))
 		} else if err != nil {
 			logger.Warn("Failed to get message part", "error", err)
 			w.WriteHeader(500)
@@ -130,10 +132,10 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 				w.WriteHeader(500)
 				return
 			}
-			message = string(b)
+			message = b
 		}
-		message = strings.TrimSpace(message)
-		if message == "" {
+		message = bytes.TrimSpace(message)
+		if len(message) == 0 {
 			logger.Warn("Empty message")
 			w.WriteHeader(400)
 			return
@@ -156,7 +158,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			}
 		}
 
-		parsed, err := mail.ReadMessage(strings.NewReader(message))
+		parsed, err := mail.ReadMessage(bytes.NewReader(message))
 		if err != nil {
 			logger.Warn("ReadMessage() error", "error", err)
 			w.WriteHeader(500)
@@ -184,8 +186,9 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 
 		infos := new(IncomingMail)
-		infos.Data = message
+		infos.Data = []byte(message)
 		infos.TimeReported = now
+		infos.UID = NewULID()
 		if sender != nil {
 			infos.MailFrom = sender.Address
 		}
@@ -211,7 +214,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 		if returnParsing {
 			parser := NewParser(logger)
-			defer parser.Close()
+			defer func() { _ = parser.Close() }()
 			features, err := parser.Parse(infos)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
@@ -369,7 +372,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			}
 		}
 
-		var b strings.Builder
+		var b bytes.Buffer
 		_, err = message.WriteTo(&b)
 		if err != nil {
 			logger.Warn("Error marshalling HTTP message to MIME", "error", err)
@@ -377,8 +380,9 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			return
 		}
 		infos := new(IncomingMail)
-		infos.Data = b.String()
+		infos.Data = b.Bytes()
 		infos.TimeReported = now
+		infos.UID = NewULID()
 		if len(from) > 0 {
 			infos.MailFrom = from
 		}
@@ -405,7 +409,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 		if returnParsing {
 			parser := NewParser(logger)
-			defer parser.Close()
+			defer func() { _ = parser.Close() }()
 			features, err := parser.Parse(infos)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
