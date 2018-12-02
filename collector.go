@@ -57,14 +57,9 @@ func (c *RedisCollector) Push(stop <-chan struct{}, info *IncomingMail) error {
 	w.Header = lz4.Header{
 		CompressionLevel: 0,
 	}
-	err := msgp.Encode(w, info)
-	if err != nil {
-		return err
-	}
-	err = w.Close()
-	if err != nil {
-		return err
-	}
+	err := autoclose(w, func() error {
+		return msgp.Encode(w, info)
+	})
 	c.logger.Debug("lz4 encoded size", "size", len(buffer.Bytes()))
 	_, err = c.client.RPush(c.key, buffer.Bytes()).Result()
 	return err

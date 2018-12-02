@@ -704,12 +704,16 @@ func ParseMails(ctx context.Context, collector Collector, parser Parser, consume
 					logger.Info("Failed to parse message", "error", err)
 					continue L
 				}
-				err = consumer.Consume(features)
-				if err != nil {
-					logger.Warn("Failed to consume parsing results", "error", err)
-					continue
-				}
-				logger.Info("Parsing results sent to consumer")
+				// TODO: in own single goroutine ?
+				go func() {
+					err := consumer.Consume(features)
+					if err != nil {
+						logger.Warn("Failed to consume parsing results", "error", err)
+					} else {
+						logger.Info("Parsing results sent to consumer")
+					}
+				}()
+
 			}
 		})
 	}

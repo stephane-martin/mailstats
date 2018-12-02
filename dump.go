@@ -13,8 +13,9 @@ import (
 )
 
 func Dump(c *cli.Context) {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/dump", func(hw http.ResponseWriter, r *http.Request) {
 		charset := ""
+		w := os.Stderr
 		ct := r.Header.Get("Content-Type")
 		if ct != "" {
 			_, params, err := mime.ParseMediaType(ct)
@@ -25,20 +26,20 @@ func Dump(c *cli.Context) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			_, _ = fmt.Fprintln(os.Stderr, err)
-			w.WriteHeader(500)
+			hw.WriteHeader(500)
 			return
 		}
 		if charset != "" {
 			encoding, err := htmlindex.Get(charset)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, "unknown encoding")
-				w.WriteHeader(500)
+				hw.WriteHeader(500)
 				return
 			}
 			decoded, err := encoding.NewDecoder().Bytes(body)
 			if err != nil {
 				_, _ = fmt.Fprintln(os.Stderr, "error decoding body")
-				w.WriteHeader(500)
+				hw.WriteHeader(500)
 				return
 			}
 			body = decoded

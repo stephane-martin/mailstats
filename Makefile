@@ -26,10 +26,10 @@ version:
 	echo ${VERSION}
 
 ${BINARY}_debug: bindata.go incoming_gen.go ${SOURCES}
-	go build -x -tags netgo -o ${BINARY}_debug ${LDFLAGS} ${FULL}
+	go build -x -tags 'netgo osusergo' -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
 ${BINARY}: bindata.go incoming_gen.go ${SOURCES}
-	go build -a -installsuffix nocgo -tags netgo -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
+	go build -a -installsuffix nocgo -tags 'netgo osusergo' -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
 tools:
 	go get -u github.com/kevinburke/go-bindata/go-bindata

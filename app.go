@@ -50,6 +50,12 @@ func MakeApp() *cli.App {
 			EnvVar: "MAILSTATS_OUTFILE",
 		},
 		cli.StringFlag{
+			Name: "outurl",
+			Value: "http://127.0.0.1:8081/dump",
+			Usage: "when writing results to HTTP, the url where to post results",
+			EnvVar: "MAILSTATS_OUTURL",
+		},
+		cli.StringFlag{
 			Name: "redis-url",
 			Value: "redis://127.0.0.1:6379?db=0",
 			Usage: "redis connection URL",

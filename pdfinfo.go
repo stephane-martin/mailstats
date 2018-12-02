@@ -135,11 +135,14 @@ func PDFInfo(filename string) (*PDFMeta, error) {
 	return meta, nil
 }
 
-func PDFBytesInfo(pdf []byte) (*PDFMeta, error) {
+func PDFBytesInfo(pdf []byte) (meta *PDFMeta, err error) {
 	temp, err := NewTempFile(pdf)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = temp.Remove() }()
-	return PDFInfo(temp.Name())
+	_ = temp.RemoveAfter(func(name string) error {
+		meta, err = PDFInfo(name)
+		return err
+	})
+	return meta, err
 }

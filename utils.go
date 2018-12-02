@@ -42,13 +42,13 @@ func NewTempFile(content []byte) (*TempFile, error) {
 		return nil, err
 	}
 	t := &TempFile{name: f.Name()}
-	_, err = f.Write(content)
-	if err != nil {
-		_ = f.Close()
-		_ = os.Remove(t.name)
-		return nil, err
-	}
-	err = f.Close()
+	err = autoclose(f, func() error {
+		if len(content) == 0 {
+			return nil
+		}
+		_, e := f.Write(content)
+		return e
+	})
 	if err != nil {
 		_ = os.Remove(t.name)
 		return nil, err
@@ -70,10 +70,38 @@ func (t *TempFile) Remove() (err error) {
 	return err
 }
 
+func (t *TempFile) RemoveAfter(f func(name string) error) (err error) {
+	defer func() {
+		e := recover()
+		errRemove := t.Remove()
+		if e != nil {
+			panic(e)
+		}
+		if err == nil {
+			err = errRemove
+		}
+	}()
+	return f(t.Name())
+}
+
 func normalize(s string) string {
 	return norm.NFKC.String(s)
 }
 
 func NewULID() ulid.ULID {
 	return <-ulidChan
+}
+
+func autoclose(w io.Closer, f func() error) (err error) {
+	defer func() {
+		e := recover()
+		errClose := w.Close()
+		if e != nil {
+			panic(e)
+		}
+		if err == nil {
+			err = errClose
+		}
+	}()
+	return f()
 }

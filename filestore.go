@@ -112,13 +112,9 @@ func (s *FileStore) New(uid ulid.ULID, obj *IncomingMail) error {
 	if err != nil {
 		return err
 	}
-	err = msgp.Encode(f, obj)
-	if err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmppath)
-		return err
-	}
-	err = f.Close()
+	err = autoclose(f, func() error {
+		return msgp.Encode(f, obj)
+	})
 	if err != nil {
 		_ = os.Remove(tmppath)
 		return err

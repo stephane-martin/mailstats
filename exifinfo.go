@@ -36,13 +36,16 @@ func (w *ExifToolWrapper) ExtractFromFile(filename string) (map[string]interface
 	return attributes[0], nil
 }
 
-func (w *ExifToolWrapper) Extract(content []byte) (map[string]interface{}, error) {
+func (w *ExifToolWrapper) Extract(content []byte) (meta map[string]interface{}, err error) {
 	temp, err := NewTempFile(content)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = temp.Remove() }()
-	return w.ExtractFromFile(temp.Name())
+	_ = temp.RemoveAfter(func(name string) error {
+		meta, err = w.ExtractFromFile(name)
+		return err
+	})
+	return meta, err
 }
 
 func (w *ExifToolWrapper) Close() error {
