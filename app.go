@@ -57,7 +57,7 @@ func MakeApp() *cli.App {
 		},
 		cli.StringFlag{
 			Name: "redis-results-key",
-			Value: "mailstats",
+			Value: "mailstats.results",
 			Usage: "The key for the results list in redis",
 			EnvVar: "MAILSTATS_REDIS_RESULTS_KEY",
 		},
@@ -70,7 +70,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name: "collector",
 			Value: "channel",
-			Usage: "The kind of collector to use (channel or filesystem)",
+			Usage: "The kind of collector to use (channel, filesystem or redis)",
 			EnvVar: "MAILSTATS_COLLECTOR",
 		},
 		cli.IntFlag{
@@ -84,6 +84,12 @@ func MakeApp() *cli.App {
 			Value: "/var/lib/mailstats",
 			Usage: "Where to store the incoming mails (for filesystem collector)",
 			EnvVar: "MAILSTATS_COLLECTOR_DIRECTORY",
+		},
+		cli.StringFlag{
+			Name: "redis-collector-key",
+			Value: "mailstats.collector",
+			Usage: "When using redis as the collector, the key to use",
+			EnvVar: "MAILSTATS_REDIS_COLLECTOR_KEY",
 		},
 
 	}

@@ -16,6 +16,7 @@ type Args struct {
 	Collector     string
 	CollectorSize int
 	CollectorDir  string
+	RedisCollectorKey string
 }
 
 func GetArgs(c *cli.Context) (*Args, error) {
@@ -67,7 +68,7 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	if args.Collector == "" {
 		args.Collector = "channel"
 	}
-	if args.Collector != "filesystem" && args.Collector != "channel" {
+	if args.Collector != "filesystem" && args.Collector != "channel" && args.Collector != "redis" {
 		return nil, cli.NewExitError("Unknown collector type", 1)
 	}
 
@@ -79,6 +80,11 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	args.CollectorSize = c.GlobalInt("collector-size")
 	if args.CollectorSize <= 0 {
 		args.CollectorSize = 10000
+	}
+
+	args.RedisCollectorKey = strings.TrimSpace(c.GlobalString("redis-collector-key"))
+	if args.RedisCollectorKey == "" {
+		args.RedisCollectorKey = "mailstats.collector"
 	}
 
 	return args, nil

@@ -478,6 +478,9 @@ func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (stri
 		}
 		if err != nil {
 			logger.Info("NextPart", "error", err)
+			if strings.Contains(err.Error(), "EOF") {
+				break
+			}
 			continue
 		}
 		subctHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
@@ -558,7 +561,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 		return nil, err
 	}
 	attachment.InferredType = typ.MIME.Value
-	logger.Debug("Attachment", "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
+	logger.Debug("Attachment", "value", typ.MIME.Value, "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
 
 	switch typ {
 	case matchers.TypePdf:

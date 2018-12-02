@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"github.com/go-redis/redis"
 	"github.com/storozhukBM/verifier"
@@ -51,12 +50,9 @@ type RedisConsumer struct {
 	args RedisArgs
 }
 
-func NewRedisConsumer(args RedisArgs) (*RedisConsumer, error) {
+func NewRedisClient(args RedisArgs) (*redis.Client, error) {
 	if args.URL == "" {
 		args.URL = "redis://127.0.0.1:6379"
-	}
-	if args.ResultsKey == "" {
-		args.ResultsKey = "mailstats"
 	}
 	u, _ := url.Parse(args.URL)
 	params := u.Query()
@@ -80,18 +76,7 @@ func NewRedisConsumer(args RedisArgs) (*RedisConsumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RedisConsumer{client: client, args: args}, nil
+	return client, nil
 }
 
-func (c *RedisConsumer) Consume(features FeaturesMail) error {
-	b, err := json.Marshal(features)
-	if err != nil {
-		return err
-	}
-	_, err = c.client.RPush(c.args.ResultsKey, b).Result()
-	return err
-}
 
-func (c *RedisConsumer) Close() error {
-	return c.client.Close()
-}

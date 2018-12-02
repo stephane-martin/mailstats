@@ -1,14 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	"github.com/go-redis/redis"
+	"github.com/tinylib/msgp/msgp"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/inconshreveable/log15"
+	"github.com/pierrec/lz4"
 )
-
-
 
 type Collector interface {
 	Push(stop <-chan struct{}, info *IncomingMail) error
@@ -25,9 +30,98 @@ func NewCollector(args *Args, logger log15.Logger) (Collector, error) {
 		return NewChanCollector(args.CollectorSize, logger)
 	case "filesystem":
 		return NewFSCollector(args.CollectorDir, logger)
+	case "redis":
+		return NewRedisCollector(args, logger)
 	default:
 		return nil, errors.New("unknown collector")
 	}
+}
+
+type RedisCollector struct {
+	logger log15.Logger
+	client *redis.Client
+	key    string
+}
+
+func NewRedisCollector(args *Args, logger log15.Logger) (*RedisCollector, error) {
+	client, err := NewRedisClient(args.Redis)
+	if err != nil {
+		return nil, err
+	}
+	return &RedisCollector{logger: logger, client: client, key: args.RedisCollectorKey}, nil
+}
+
+func (c *RedisCollector) Push(stop <-chan struct{}, info *IncomingMail) error {
+	var buffer bytes.Buffer
+	w := lz4.NewWriter(&buffer)
+	w.Header = lz4.Header{
+		CompressionLevel: 0,
+	}
+	err := msgp.Encode(w, info)
+	if err != nil {
+		return err
+	}
+	err = w.Close()
+	if err != nil {
+		return err
+	}
+	c.logger.Debug("lz4 encoded size", "size", len(buffer.Bytes()))
+	_, err = c.client.RPush(c.key, buffer.Bytes()).Result()
+	return err
+}
+
+func (c *RedisCollector) PushCtx(ctx context.Context, info *IncomingMail) error {
+	return c.Push(ctx.Done(), info)
+}
+
+func (c *RedisCollector) Pull(stop <-chan struct{}) (*IncomingMail, error) {
+	var res []string
+	var err error
+	gotit := make(chan struct{})
+	go func() {
+	L:
+		for {
+			res, err = c.client.BLPop(30 * time.Second, c.key).Result()
+			if err == redis.Nil {
+				continue L
+			}
+			if err != nil || len(res) > 0 {
+				close(gotit)
+				return
+			}
+		}
+	}()
+	select {
+	case <-stop:
+		return nil, context.Canceled
+	case <-gotit:
+	}
+	if err != nil {
+		return nil, fmt.Errorf("BLPOP error: %s", err)
+	}
+	if len(res) != 2 {
+		return nil, fmt.Errorf("wrong number of returned variables by BLPOP: %d", len(res))
+	}
+	if len(res[1]) == 0 {
+		return nil, errors.New("empty string returned by BLPOP")
+	}
+	c.logger.Debug("BLPOP result", "length", len(res[1]), "key", res[0])
+	raw := strings.NewReader(res[1])
+	lz4Reader := lz4.NewReader(raw)
+	var mail IncomingMail
+	err = msgp.Decode(lz4Reader, &mail)
+	if err != nil {
+		return nil, fmt.Errorf("messagepack unmarshal error: %s", err)
+	}
+	return &mail, nil
+}
+
+func (c *RedisCollector) PullCtx(ctx context.Context) (*IncomingMail, error) {
+	return c.Pull(ctx.Done())
+}
+
+func (c *RedisCollector) Close() error {
+	return c.client.Close()
 }
 
 type FSCollector struct {
@@ -67,12 +161,11 @@ func (c *FSCollector) Close() error {
 	return c.store.Close()
 }
 
-
 type ChanCollector struct {
 	ch     chan *IncomingMail
 	once   sync.Once
 	logger log15.Logger
-	store *FileStore
+	store  *FileStore
 }
 
 func NewChanCollector(size int, logger log15.Logger) (*ChanCollector, error) {
@@ -129,6 +222,3 @@ func (c *ChanCollector) Close() error {
 	})
 	return nil
 }
-
-
-

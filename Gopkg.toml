@@ -90,6 +90,10 @@
     name = "github.com/tinylib/msgp"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/pierrec/lz4"
+    version = "2.0.7"
+
 [prune]
 	go-tests = true
 	unused-packages = true

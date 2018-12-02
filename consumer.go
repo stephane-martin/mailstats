@@ -42,7 +42,7 @@ func (args ConsumerArgs) GetType() ConsumerType {
 }
 
 func (args ConsumerArgs) Verify() error {
-	types := []string{"stdout", "stderr", "file", "redis", "syslog"}
+	types := []string{"stdout", "stderr", "file", "redis"}
 	v := verifier.New()
 	have := false
 	for _, t := range types {
@@ -105,4 +105,26 @@ func NewFileConsumer(args ConsumerArgs) (Consumer, error) {
 		return nil, err
 	}
 	return Writer{WriteCloser: f}, nil
+}
+
+
+func NewRedisConsumer(args RedisArgs) (*RedisConsumer, error) {
+	client, err := NewRedisClient(args)
+	if err != nil {
+		return nil, err
+	}
+	return &RedisConsumer{client: client, args: args}, nil
+}
+
+func (c *RedisConsumer) Consume(features FeaturesMail) error {
+	b, err := json.Marshal(features)
+	if err != nil {
+		return err
+	}
+	_, err = c.client.RPush(c.args.ResultsKey, b).Result()
+	return err
+}
+
+func (c *RedisConsumer) Close() error {
+	return c.client.Close()
 }
