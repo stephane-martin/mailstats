@@ -16,6 +16,7 @@ func GuessReader(reader io.Reader) (types.Type, io.Reader, error) {
 	b.Grow(8192)
 	t, err := filetype.MatchReader(io.TeeReader(reader, b))
 	reader = io.MultiReader(b, reader)
+
 	if err != nil {
 		return t, reader, err
 	}
@@ -34,7 +35,7 @@ func GuessReader(reader io.Reader) (types.Type, io.Reader, error) {
 		}
 	}
 
-	return t, reader, err
+	return t, reader, nil
 }
 
 func Guess(content []byte) (types.Type, error) {

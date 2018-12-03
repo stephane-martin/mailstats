@@ -45,42 +45,42 @@ func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size uint64, logger lo
 	}
 }
 
-func replaceCompressed(oldType types.Type, oldReader io.Reader) (newType types.Type, newReader io.Reader, compression string) {
-	newReader = oldReader
-	newType = oldType
+func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Logger) (types.Type, io.Reader, string, error) {
 
 	switch oldType {
 	case matchers.TypeGz:
-		compression = "gzip"
 		r, err := gzip.NewReader(oldReader)
-		if err == nil {
-			newt, newr, err := GuessReader(r)
-			if err == nil {
-				newType = newt
-				newReader = newr
-			}
+		if err != nil {
+			return oldType, nil, "", err
 		}
+		newt, newr, err := GuessReader(r)
+		if err != nil {
+			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
+			return oldType, newr, "gzip", nil
+		}
+		return newt, newr, "gzip", nil
 	case matchers.TypeBz2:
-		compression = "bzip2"
 		r := bzip2.NewReader(oldReader)
 		newt, newr, err := GuessReader(r)
-		if err == nil {
-			newType = newt
-			newReader = newr
+		if err != nil {
+			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
+			return oldType, newr, "bzip2", nil
 		}
+		return newt, newr, "bzip2", nil
 	case matchers.TypeXz:
-		compression = "xz"
 		r, err := xz.NewReader(oldReader, 0)
-		if err == nil {
-			newt, newr, err := GuessReader(r)
-			if err == nil {
-				newType = newt
-				newReader = newr
-			}
+		if err != nil {
+			return oldType, nil, "", err
 		}
+		newt, newr, err := GuessReader(r)
+		if err != nil {
+			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
+			return oldType, newr, "xz", nil
+		}
+		return newt, newr, "xz", nil
 	default:
+		return oldType, oldReader, "", nil
 	}
-	return
 }
 
 func AnalyzeZip(reader io.ReaderAt, size uint64, logger log15.Logger) (*Archive, error) {
@@ -112,7 +112,12 @@ LoopFiles:
 			continue LoopFiles
 		}
 
-		t, newReader, entry.Compression = replaceCompressed(t, newReader)
+		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
+		if err != nil {
+			logger.Info("Failed to decompress file from ZIP archive", "error", err)
+			_ = fileReader.Close()
+			continue LoopFiles
+		}
 		entry.Type = t.MIME.Value
 		switch t {
 		case matchers.TypeTar:
@@ -179,7 +184,11 @@ LoopFiles:
 			logger.Info("Failed to detect file type from RAR archive", "error", err)
 			continue LoopFiles
 		}
-		t, newReader, entry.Compression = replaceCompressed(t, newReader)
+		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
+		if err != nil {
+			logger.Info("Failed to decompress file from RAR archive", "error", err)
+			continue LoopFiles
+		}
 		entry.Type = t.MIME.Value
 		switch t {
 		case matchers.TypeTar:
@@ -238,8 +247,11 @@ LoopFiles:
 			logger.Info("Failed to detect file type from TAR archive", "error", err)
 			continue LoopFiles
 		}
-
-		t, newReader, entry.Compression = replaceCompressed(t, newReader)
+		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
+		if err != nil {
+			logger.Info("Failed to decompress file from TAR archive", "error", err)
+			continue LoopFiles
+		}
 		entry.Type = t.MIME.Value
 		switch t {
 		case matchers.TypeTar:
