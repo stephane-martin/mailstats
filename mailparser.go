@@ -26,7 +26,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/abadojack/whatlanggo"
-	"github.com/h2non/filetype"
 	"github.com/inconshreveable/log15"
 	"github.com/jdkato/prose"
 	"github.com/kljensen/snowball"
@@ -104,7 +103,7 @@ func init() {
 }
 
 type Parser interface {
-	Parse(i *IncomingMail) (FeaturesMail, error)
+	Parse(i *IncomingMail) (*FeaturesMail, error)
 	Close() error
 }
 
@@ -129,34 +128,35 @@ func (p *parserImpl) Close() error {
 	return nil
 }
 
-func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
+func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) {
 	m, err := mail.ReadMessage(bytes.NewReader(i.Data))
 	if err != nil {
-		return parsed, err
+		return nil, err
 	}
-	parsed.BaseInfos = i.BaseInfos
+	features = new(FeaturesMail)
+	features.BaseInfos = i.BaseInfos
 	uid := ulid.ULID(i.BaseInfos.UID).String()
-	parsed.UID = uid
-	parsed.TimeReported = i.TimeReported.Format(time.RFC3339)
-	parsed.Headers = make(map[string][]string)
+	features.UID = uid
+	features.TimeReported = i.TimeReported.Format(time.RFC3339)
+	features.Headers = make(map[string][]string)
 
 	for k, vl := range m.Header {
 		k = strings.ToLower(k)
-		parsed.Headers[k] = make([]string, 0)
+		features.Headers[k] = make([]string, 0)
 		for _, v := range vl {
 			decv, err := StringDecode(v)
 			if err != nil {
 				p.logger.Debug("Error decoding header value", "key", k, "value", v, "error", err)
 				continue
 			}
-			parsed.Headers[k] = append(parsed.Headers[k], decv)
+			features.Headers[k] = append(features.Headers[k], decv)
 		}
 	}
-	parsed.Size = len(i.Data)
+	features.Size = len(i.Data)
 
 	contentType, plain, htmls, attachments := ParsePart(bytes.NewReader(i.Data), p.tool, p.logger)
-	parsed.ContentType = contentType
-	parsed.Attachments = attachments
+	features.ContentType = contentType
+	features.Attachments = attachments
 	plain = filterPlain(plain)
 	urls := make([]string, 0)
 	images := make([]string, 0)
@@ -180,81 +180,81 @@ func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
 
 	urls = append(urls, xurls.Relaxed().FindAllString(plain, -1)...)
 	urls = append(urls, xurls.Relaxed().FindAllString(ahtml, -1)...)
-	parsed.Urls = distinct(urls)
+	features.Urls = distinct(urls)
 
 	emails := emailRE.FindAllString(plain, -1)
 	emails = append(emails, emailRE.FindAllString(ahtml, -1)...)
-	parsed.Emails = distinct(emails)
+	features.Emails = distinct(emails)
 
-	parsed.Images = distinct(images)
+	features.Images = distinct(images)
 
 	if len(plain) > 0 {
-		parsed.BagOfWords = make(map[string]int)
-		bagOfWords(plain, parsed.BagOfWords)
+		features.BagOfWords = make(map[string]int)
+		bagOfWords(plain, features.BagOfWords)
 		langInfo := whatlanggo.Detect(plain)
 		if langInfo.Script != nil && langInfo.Lang != -1 {
-			parsed.Language = strings.ToLower(whatlanggo.Langs[langInfo.Lang])
+			features.Language = strings.ToLower(whatlanggo.Langs[langInfo.Lang])
 		}
 	}
 
-	if len(parsed.Language) > 0 {
-		switch parsed.Language {
+	if len(features.Language) > 0 {
+		switch features.Language {
 		case "english":
-			for word := range parsed.BagOfWords {
+			for word := range features.BagOfWords {
 				if _, ok := stopWordsEnglish[word]; ok {
-					delete(parsed.BagOfWords, word)
+					delete(features.BagOfWords, word)
 				}
 			}
 		case "french":
-			for word := range parsed.BagOfWords {
+			for word := range features.BagOfWords {
 				if _, ok := stopWordsFrench[word]; ok {
-					delete(parsed.BagOfWords, word)
+					delete(features.BagOfWords, word)
 				}
 			}
 		default:
 		}
-		parsed.BagOfStems = make(map[string]int)
-		for word := range parsed.BagOfWords {
-			stem, err := snowball.Stem(word, parsed.Language, true)
+		features.BagOfStems = make(map[string]int)
+		for word := range features.BagOfWords {
+			stem, err := snowball.Stem(word, features.Language, true)
 			if err == nil {
-				parsed.BagOfStems[stem] = parsed.BagOfStems[stem] + parsed.BagOfWords[word]
+				features.BagOfStems[stem] = features.BagOfStems[stem] + features.BagOfWords[word]
 			}
 		}
 	}
 
-	if len(parsed.Headers["date"]) > 0 {
-		d, err := mail.ParseDate(parsed.Headers["date"][0])
+	if len(features.Headers["date"]) > 0 {
+		d, err := mail.ParseDate(features.Headers["date"][0])
 		if err == nil {
-			parsed.TimeHeader = d.Format(time.RFC3339)
+			features.TimeHeader = d.Format(time.RFC3339)
 		}
-		delete(parsed.Headers, "date")
+		delete(features.Headers, "date")
 	}
 
-	if len(parsed.Headers["from"]) > 0 {
-		addr := parsed.Headers["from"][0]
+	if len(features.Headers["from"]) > 0 {
+		addr := features.Headers["from"][0]
 		paddr, err := mail.ParseAddress(addr)
 		if err == nil {
-			parsed.From = Address(*paddr)
+			features.From = Address(*paddr)
 		}
-		delete(parsed.Headers, "from")
+		delete(features.Headers, "from")
 	}
 
-	if len(parsed.Headers["to"]) > 0 {
-		paddrs, err := mail.ParseAddressList(parsed.Headers["to"][0])
+	if len(features.Headers["to"]) > 0 {
+		paddrs, err := mail.ParseAddressList(features.Headers["to"][0])
 		if err == nil {
 			for _, paddr := range paddrs {
-				parsed.To = append(parsed.To, Address(*paddr))
+				features.To = append(features.To, Address(*paddr))
 			}
 		}
-		delete(parsed.Headers, "to")
+		delete(features.Headers, "to")
 	}
 
-	if len(parsed.Headers["subject"]) > 0 {
-		parsed.Title = parsed.Headers["subject"][0]
-		delete(parsed.Headers, "subject")
+	if len(features.Headers["subject"]) > 0 {
+		features.Title = features.Headers["subject"][0]
+		delete(features.Headers, "subject")
 	}
 
-	return parsed, nil
+	return features, nil
 }
 
 var emailRE = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
@@ -561,7 +561,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 	h := sha256.Sum256(content)
 	attachment.Hash = hex.EncodeToString(h[:])
 
-	typ, err := filetype.Match(content)
+	typ, err := Guess(content)
 	if err != nil {
 		return nil, err
 	}
@@ -585,8 +585,8 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 				attachment.ImageMetadata = meta
 			}
 		}
-	case matchers.TypeZip, matchers.TypeTar:
-		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size)
+	case matchers.TypeZip, matchers.TypeTar, matchers.TypeRar:
+		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size, logger)
 		if err != nil {
 			logger.Warn("Error analyzing archive", "error", err)
 		} else {
@@ -619,7 +619,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 		}
 		subAttachment, err := AnalyseAttachment(filename, bz2Reader, tool, logger)
 		if err != nil {
-			logger.Warn("Error analyzing subattachement", "error", err)
+			logger.Warn("Error analyzing sub-attachement", "error", err)
 		} else {
 			attachment.SubAttachment = subAttachment
 		}

@@ -98,6 +98,10 @@
     name = "github.com/xi2/xz"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/gabriel-vasile/mimetype"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

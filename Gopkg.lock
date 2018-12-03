@@ -50,6 +50,18 @@
   version = "v1.4.7"
 
 [[projects]]
+  branch = "master"
+  digest = "1:1646ca0ad98a88f1b5cb908180ef61b4af314d69d6e0d9479bf2460d3f4da010"
+  name = "github.com/gabriel-vasile/mimetype"
+  packages = [
+    ".",
+    "matchers",
+    "matchers/json",
+  ]
+  pruneopts = "UT"
+  revision = "077d38b2e891226c1c26813f863747c94b5b7d7c"
+
+[[projects]]
   digest = "1:c3957c9c9dc7beb125fdc93c920957d0305fe66dc48712a600f8790ce9354254"
   name = "github.com/go-cmd/cmd"
   packages = ["."]
@@ -434,6 +446,7 @@
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
     "github.com/fsnotify/fsnotify",
+    "github.com/gabriel-vasile/mimetype",
     "github.com/go-cmd/cmd",
     "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",

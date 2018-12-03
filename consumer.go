@@ -16,7 +16,7 @@ import (
 )
 
 type Consumer interface {
-	Consume(features FeaturesMail) error
+	Consume(features *FeaturesMail) error
 	Close() error
 }
 
@@ -118,10 +118,10 @@ func NewHTTPConsumer(args ConsumerArgs) (Consumer, error) {
 	}, nil
 }
 
-func (c *HTTPConsumer) Consume(features FeaturesMail) error {
+func (c *HTTPConsumer) Consume(features *FeaturesMail) error {
 	r, w := io.Pipe()
 	go func() {
-		err := json.NewEncoder(w).Encode(&features)
+		err := json.NewEncoder(w).Encode(features)
 		_ = w.CloseWithError(err)
 	}()
 	_, err := c.client.Post(c.url, "application/json", r)
@@ -138,9 +138,9 @@ type Writer struct {
 	io.WriteCloser
 }
 
-func (w Writer) Consume(features FeaturesMail) (err error) {
+func (w Writer) Consume(features *FeaturesMail) (err error) {
 	printLock.Lock()
-	err = json.NewEncoder(w.WriteCloser).Encode(&features)
+	err = json.NewEncoder(w.WriteCloser).Encode(features)
 	printLock.Unlock()
 	return err
 }
@@ -166,7 +166,7 @@ func NewRedisConsumer(args RedisArgs) (*RedisConsumer, error) {
 	return &RedisConsumer{client: client, args: args}, nil
 }
 
-func (c *RedisConsumer) Consume(features FeaturesMail) error {
+func (c *RedisConsumer) Consume(features *FeaturesMail) error {
 	b, err := json.Marshal(features)
 	if err != nil {
 		return err
