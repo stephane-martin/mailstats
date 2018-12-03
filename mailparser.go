@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/h2non/filetype/matchers"
+	"github.com/oklog/ulid"
+	"github.com/xi2/xz"
 	"golang.org/x/sync/errgroup"
 	"io"
 	"io/ioutil"
@@ -38,6 +40,7 @@ import (
 
 type FeaturesMail struct {
 	BaseInfos
+	UID          string              `json:"uid,omitempty"`
 	Size         int                 `json:"size"`
 	ContentType  string              `json:"content_type,omitempty"`
 	TimeReported string              `json:"timereported,omitempty"`
@@ -132,6 +135,8 @@ func (p *parserImpl) Parse(i *IncomingMail) (parsed FeaturesMail, err error) {
 		return parsed, err
 	}
 	parsed.BaseInfos = i.BaseInfos
+	uid := ulid.ULID(i.BaseInfos.UID).String()
+	parsed.UID = uid
 	parsed.TimeReported = i.TimeReported.Format(time.RFC3339)
 	parsed.Headers = make(map[string][]string)
 
@@ -594,18 +599,19 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 	case matchers.TypeGz:
 		gzReader, err := gzip.NewReader(bytes.NewReader(content))
 		if err != nil {
-			// TODO
+			logger.Warn("Failed to decompress gzip attachement", "error", err)
 		} else {
 			if strings.HasSuffix(filename, ".gz") {
 				filename = filename[:len(filename)-3]
 			}
 			subAttachment, err := AnalyseAttachment(filename, gzReader, tool, logger)
 			if err != nil {
-				// TODO
+				logger.Warn("Error analyzing subattachement", "error", err)
 			} else {
 				attachment.SubAttachment = subAttachment
 			}
 		}
+
 	case matchers.TypeBz2:
 		bz2Reader := bzip2.NewReader(bytes.NewReader(content))
 		if strings.HasSuffix(filename, ".bz2") {
@@ -613,11 +619,31 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 		}
 		subAttachment, err := AnalyseAttachment(filename, bz2Reader, tool, logger)
 		if err != nil {
-			// TODO
+			logger.Warn("Error analyzing subattachement", "error", err)
 		} else {
 			attachment.SubAttachment = subAttachment
 		}
+
+	case matchers.TypeXz:
+		xzReader, err := xz.NewReader(bytes.NewReader(content), 0)
+		if err != nil {
+			logger.Warn("Failed to decompress xz attachement", "error", err)
+		} else {
+			if strings.HasSuffix(filename, ".xz") {
+				filename = filename[:len(filename)-3]
+			}
+			subAttachment, err := AnalyseAttachment(filename, xzReader, tool, logger)
+			if err != nil {
+				logger.Warn("Error analyzing subattachement", "error", err)
+			} else {
+				attachment.SubAttachment = subAttachment
+			}
+		}
+
 	}
+
+
+
 	return attachment, nil
 }
 

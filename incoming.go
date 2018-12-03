@@ -11,7 +11,7 @@ type BaseInfos struct {
 	Addr         string    `json:"addr,omitempty"`
 	Helo         string    `json:"helo,omitempty"`
 	TimeReported time.Time `json:"timereported,omitempty"`
-	UID          [16]byte  `json:"uid"`
+	UID          [16]byte  `json:"-"`
 }
 
 type IncomingMail struct {

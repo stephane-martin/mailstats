@@ -322,6 +322,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:0dfba983988bcd90e6dd30b9bfdb9685ff530dbf61db3706e55372e975b1d8bc"
+  name = "github.com/xi2/xz"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "48954b6210f8d154cb5f8484d3a3e1f83489309e"
+
+[[projects]]
+  branch = "master"
   digest = "1:1a1ecfa7b54ca3f7a0115ab5c578d7d6a5d8b605839c549e80260468c42f8be7"
   name = "golang.org/x/net"
   packages = [
@@ -446,6 +454,7 @@
     "github.com/storozhukBM/verifier",
     "github.com/tinylib/msgp/msgp",
     "github.com/urfave/cli",
+    "github.com/xi2/xz",
     "golang.org/x/net/html",
     "golang.org/x/sync/errgroup",
     "golang.org/x/text/encoding",
