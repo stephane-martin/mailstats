@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"github.com/emersion/go-smtp"
 	"io"
 	"io/ioutil"
 	"net"
@@ -11,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/emersion/go-smtp"
 
 	"github.com/inconshreveable/log15"
 	"github.com/storozhukBM/verifier"
@@ -149,7 +150,7 @@ func SMTP(c *cli.Context) error {
 
 	if args.SMTP.Inetd {
 		g.Go(func() error {
-			err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
+			err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
 			_ = consumer.Close()
 			_ = forwarder.Close()
 			_ = parser.Close()
@@ -176,16 +177,13 @@ func SMTP(c *cli.Context) error {
 	listener = WrapListener(listener, "SMTP", logger)
 
 	g.Go(func() error {
-		err := StartHTTP(ctx, args.HTTP, collector, logger)
+		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)
 		logger.Info("StartHTTP has returned", "error", err)
 		return err
 	})
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
-		_ = consumer.Close()
-		_ = forwarder.Close()
-		_ = parser.Close()
+		err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})
@@ -194,9 +192,13 @@ func SMTP(c *cli.Context) error {
 		logger.Debug("Starting SMTP service")
 		err := s.Serve(listener)
 		logger.Debug("Stopped SMTP service")
-		_ = collector.Close()
 		return err
 	})
 
-	return g.Wait()
+	err = g.Wait()
+	_ = parser.Close()
+	_ = forwarder.Close()
+	_ = consumer.Close()
+	_ = collector.Close()
+	return err
 }

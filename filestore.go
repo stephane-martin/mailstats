@@ -147,7 +147,7 @@ func (s *FileStore) Get(stop <-chan struct{}, obj *IncomingMail) error {
 	c := make(chan struct{})
 	var err error
 	go func() {
-		err = s.get(obj)
+		err = s.get(stop, obj)
 		close(c)
 	}()
 	select {
@@ -158,7 +158,7 @@ func (s *FileStore) Get(stop <-chan struct{}, obj *IncomingMail) error {
 	}
 }
 
-func (s *FileStore) get(obj *IncomingMail) error {
+func (s *FileStore) get(stop <-chan struct{}, obj *IncomingMail) error {
 	s.lock.Lock()
 	newFile := ""
 	var err error
@@ -173,25 +173,32 @@ func (s *FileStore) get(obj *IncomingMail) error {
 		}
 		s.cond.Wait()
 	}
+	defer s.lock.Unlock()
 	f, err := os.Open(newFile)
 	if err != nil {
-		s.lock.Unlock()
 		return err
 	}
 	err = msgp.Decode(f, obj)
 	if err != nil {
+		// TODO: delete file ?
+		_ = f.Close()
 		return err
 	}
 	err = f.Close()
 	if err != nil {
-		s.lock.Unlock()
 		return err
 	}
-	err = os.Remove(newFile)
-	if err != nil {
-		s.lock.Unlock()
-		return err
+	select {
+	case <-stop:
+		// oops, we just retrieved some work from FS, but the client is already gone
+		// so let's transfer to another waiter
+		s.cond.Signal()
+		return context.Canceled
+	default:
+		err = os.Remove(newFile)
+		if err != nil {
+			return err
+		}
+		return nil
 	}
-	s.lock.Unlock()
-	return nil
 }

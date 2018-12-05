@@ -147,20 +147,13 @@ func Milter(c *cli.Context) error {
 		return err
 	}
 
-	var httpArgs HTTPArgs
-	httpArgs.Populate(c)
-	err = httpArgs.Verify()
-	if err != nil {
-		return cli.NewExitError(err.Error(), 1)
-	}
-
 	logger := args.Logging.Build()
 
 	consumer, err := MakeConsumer(*args)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
-	forwarder, err  := args.Forward.Build(logger)
+	forwarder, err := args.Forward.Build(logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
 	}
@@ -200,15 +193,11 @@ func Milter(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, forwarder, logger)
-		_ = consumer.Close()
-		_ = forwarder.Close()
-		_ = parser.Close()
-		return err
+		return ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
 	})
 
 	g.Go(func() error {
-		return StartHTTP(ctx, httpArgs, collector, logger)
+		return StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)
 	})
 
 	g.Go(func() error {
@@ -223,11 +212,14 @@ func Milter(c *cli.Context) error {
 			return &StatsMilter{collector: collector, stop: ctx.Done()}, 0, 0
 		})
 		logger.Info("Service Milter stopped")
-		_ = collector.Close()
 		return err
 	})
 
 	err = g.Wait()
+	_ = parser.Close()
+	_ = forwarder.Close()
+	_ = consumer.Close()
+	_ = collector.Close()
 	if err != nil {
 		logger.Debug("Milter error after Wait()", "error", err)
 	}

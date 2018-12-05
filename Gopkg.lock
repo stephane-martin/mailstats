@@ -10,6 +10,17 @@
   revision = "01d4c01a5a7c58f22e17df47209425451fb14087"
 
 [[projects]]
+  digest = "1:47fd1237abeac1246a1e690f3c6c8e8c5b963b5bf946be4f9c8210453a502a11"
+  name = "github.com/awnumar/memguard"
+  packages = [
+    ".",
+    "memcall",
+  ]
+  pruneopts = "UT"
+  revision = "f431f51ecd92dc926a5084ac3e9c89080ec7edf4"
+  version = "v0.15.0"
+
+[[projects]]
   branch = "master"
   digest = "1:d6afaeed1502aa28e80a4ed0981d570ad91b2579193404256ce672ed0a609e0d"
   name = "github.com/beorn7/perks"
@@ -60,6 +71,27 @@
   ]
   pruneopts = "UT"
   revision = "077d38b2e891226c1c26813f863747c94b5b7d7c"
+
+[[projects]]
+  branch = "master"
+  digest = "1:36fe9527deed01d2a317617e59304eb2c4ce9f8a24115bcc5c2e37b3aee5bae4"
+  name = "github.com/gin-contrib/sse"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "22d885f9ecc78bf4ee5d72b937e4bbcdc58e8cae"
+
+[[projects]]
+  digest = "1:d5083934eb25e45d17f72ffa86cae3814f4a9d6c073c4f16b64147169b245606"
+  name = "github.com/gin-gonic/gin"
+  packages = [
+    ".",
+    "binding",
+    "json",
+    "render",
+  ]
+  pruneopts = "UT"
+  revision = "b869fe1415e4b9eb52f247441830d502aece2d4d"
+  version = "v1.3.0"
 
 [[projects]]
   digest = "1:c3957c9c9dc7beb125fdc93c920957d0305fe66dc48712a600f8790ce9354254"
@@ -139,6 +171,14 @@
   revision = "767a23049b9e59ef675496a9406a1e456bc5ad6e"
 
 [[projects]]
+  digest = "1:3e551bbb3a7c0ab2a2bf4660e7fcad16db089fdcfbb44b0199e62838038623ea"
+  name = "github.com/json-iterator/go"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1624edc4454b8682399def8740d46db5e4362ba4"
+  version = "v1.1.5"
+
+[[projects]]
   digest = "1:182d7188a25f6d3787782ec6d36cc6c35ebdf190d557f94256ef8ffbee3a6d9b"
   name = "github.com/kljensen/snowball"
   packages = [
@@ -187,6 +227,22 @@
   pruneopts = "UT"
   revision = "6565f25cf48f171541d423805a62917ea02f7d65"
   version = "v1.0.0"
+
+[[projects]]
+  digest = "1:33422d238f147d247752996a26574ac48dcf472976eda7f5134015f06bf16563"
+  name = "github.com/modern-go/concurrent"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "bacd9c7ef1dd9b15be4a9909b8ac7a4e313eec94"
+  version = "1.0.3"
+
+[[projects]]
+  digest = "1:e32bdbdb7c377a07a9a46378290059822efdce5c8d96fe71940d87cb4f918855"
+  name = "github.com/modern-go/reflect2"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "4b7aa43c6742a2c18fdef89dd197aaae7dac7ccd"
+  version = "1.0.1"
 
 [[projects]]
   digest = "1:246ab598a22ea9d50f46e65f655f78161a19822f6597268b02f04af998684807"
@@ -309,6 +365,14 @@
   revision = "185b4288413d2a0dd0806f78c90dde719829e5ae"
 
 [[projects]]
+  digest = "1:a79502742652bac9b1772edacd2a1555a2afaf6299d5574f898a05c31eb590c6"
+  name = "github.com/schollz/pake"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "0a79a6b2faf9e984b8663f8c4a32175067857727"
+  version = "v1.1.0"
+
+[[projects]]
   branch = "master"
   digest = "1:7e2fd0a8b4a6c06c36dedeefe825e05a2548e835f614e4a3b4dae8eaef7192c9"
   name = "github.com/storozhukBM/verifier"
@@ -325,6 +389,30 @@
   revision = "af6442a0fcf6e2a1b824f70dd0c734f01e817751"
 
 [[projects]]
+  branch = "master"
+  digest = "1:c476b395b8404b7aff516638ddcebbf09a4f0ce1830c96316344ebe7bce2ed65"
+  name = "github.com/tscholl2/siec"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "21667da059379fb25d7ec616683cb2574de16dc8"
+
+[[projects]]
+  digest = "1:3c1a69cdae3501bf75e76d0d86dc6f2b0a7421bc205c0cb7b96b19eed464a34d"
+  name = "github.com/uber-go/atomic"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
+  version = "v1.3.2"
+
+[[projects]]
+  digest = "1:03aa6e485e528acb119fb32901cf99582c380225fc7d5a02758e08b180cb56c3"
+  name = "github.com/ugorji/go"
+  packages = ["codec"]
+  pruneopts = "UT"
+  revision = "b4c50a2b199d93b13dc15e78929cfb23bfdf21ab"
+  version = "v1.1.1"
+
+[[projects]]
   digest = "1:b24d38b282bacf9791408a080f606370efa3d364e4b5fd9ba0f7b87786d3b679"
   name = "github.com/urfave/cli"
   packages = ["."]
@@ -339,6 +427,21 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "48954b6210f8d154cb5f8484d3a3e1f83489309e"
+
+[[projects]]
+  branch = "master"
+  digest = "1:9bef1b74ae76b140542d5fbf465202f5e64462d9c8658c27bb31a150fff5a54c"
+  name = "golang.org/x/crypto"
+  packages = [
+    "bcrypt",
+    "blowfish",
+    "internal/subtle",
+    "nacl/secretbox",
+    "poly1305",
+    "salsa20/salsa",
+  ]
+  pruneopts = "UT"
+  revision = "505ab145d0a99da450461ae2c1a9f6cd10d1f447"
 
 [[projects]]
   branch = "master"
@@ -361,9 +464,12 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:225564f71149334315118db714e1ea87513e4a11cf4acb27e26bc7577cebfa0b"
+  digest = "1:f343f077a5b0bc3a3788b3a04e24dd417e3e25b2acb529c413e212d2c42416ef"
   name = "golang.org/x/sys"
-  packages = ["unix"]
+  packages = [
+    "unix",
+    "windows",
+  ]
   pruneopts = "UT"
   revision = "0cf1ed9e522b7dbb416f080a5c8003de9b702bf4"
 
@@ -428,6 +534,14 @@
   revision = "2caba252f4dc53eaf6b553000885530023f54623"
 
 [[projects]]
+  digest = "1:cbc72c4c4886a918d6ab4b95e347ffe259846260f99ebdd8a198c2331cf2b2e9"
+  name = "gopkg.in/go-playground/validator.v8"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5f1438d3fca68893a817e4a66806cea46a9e4ebf"
+  version = "v8.18.2"
+
+[[projects]]
   digest = "1:85b60f4403e2aae0eee2ac2ba50e4124dea766b582c6ec0d94fb1335d9c0d16e"
   name = "gopkg.in/neurosnap/sentences.v1"
   packages = [
@@ -438,15 +552,25 @@
   revision = "a7f18ead1433a139742a8b42ce7a059cfb484d60"
   version = "v1.0.6"
 
+[[projects]]
+  digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
+  name = "gopkg.in/yaml.v2"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "51d6538a90f86fe93ac480b35f37b2be17fef232"
+  version = "v2.2.2"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
     "github.com/abadojack/whatlanggo",
+    "github.com/awnumar/memguard",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
     "github.com/fsnotify/fsnotify",
     "github.com/gabriel-vasile/mimetype",
+    "github.com/gin-gonic/gin",
     "github.com/go-cmd/cmd",
     "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",
@@ -462,12 +586,16 @@
     "github.com/oklog/ulid",
     "github.com/phalaaxx/milter",
     "github.com/pierrec/lz4",
+    "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/schollz/pake",
     "github.com/storozhukBM/verifier",
     "github.com/tinylib/msgp/msgp",
+    "github.com/uber-go/atomic",
     "github.com/urfave/cli",
     "github.com/xi2/xz",
+    "golang.org/x/crypto/nacl/secretbox",
     "golang.org/x/net/html",
     "golang.org/x/sync/errgroup",
     "golang.org/x/text/encoding",

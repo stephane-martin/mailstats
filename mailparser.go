@@ -20,7 +20,6 @@ import (
 	"mime/multipart"
 	"net/mail"
 	"regexp"
-	"runtime"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -166,7 +165,7 @@ func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) 
 		t, eurls, eimages := html2text(h)
 		if len(t) > 0 {
 			b.WriteString(t)
-			b.WriteByte('\n')
+			b.WriteString(".\n")
 		}
 		urls = append(urls, eurls...)
 		images = append(images, eimages...)
@@ -705,11 +704,15 @@ func StringDecode(text string) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
-func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, logger log15.Logger) error {
+func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, nbParsers int, logger log15.Logger) error {
 	g, lctx := errgroup.WithContext(ctx)
-	cpus := runtime.NumCPU()
 
-	for i := 0; i < cpus; i++ {
+	if nbParsers == 0 {
+		<-ctx.Done()
+		return nil
+	}
+
+	for i := 0; i < nbParsers; i++ {
 		g.Go(func() error {
 		L:
 			for {

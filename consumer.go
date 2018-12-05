@@ -96,7 +96,7 @@ type HTTPConsumer struct {
 	url string
 }
 
-func NewHTTPConsumer(args ConsumerArgs) (Consumer, error) {
+func NewHTTPClient() *http.Client {
 	tr := &http.Transport{
 		DisableCompression: true,
 		MaxIdleConns: 16,
@@ -112,8 +112,12 @@ func NewHTTPConsumer(args ConsumerArgs) (Consumer, error) {
 			DualStack: true,
 		}).DialContext,
 	}
+	return &http.Client{Transport: tr}
+}
+
+func NewHTTPConsumer(args ConsumerArgs) (Consumer, error) {
 	return &HTTPConsumer{
-		client: &http.Client{Transport: tr},
+		client: NewHTTPClient(),
 		url: args.GetURL(),
 	}, nil
 }

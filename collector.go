@@ -72,24 +72,33 @@ func (c *RedisCollector) PushCtx(ctx context.Context, info *IncomingMail) error 
 func (c *RedisCollector) Pull(stop <-chan struct{}) (*IncomingMail, error) {
 	var res []string
 	var err error
-	gotit := make(chan struct{})
+	gotIt := make(chan struct{})
 	go func() {
-	L:
 		for {
-			res, err = c.client.BLPop(30 * time.Second, c.key).Result()
-			if err == redis.Nil {
-				continue L
-			}
-			if err != nil || len(res) > 0 {
-				close(gotit)
+			res, err = c.client.BLPop(time.Second, c.key).Result()
+			select {
+			case <-stop:
+				if err == nil && len(res) > 0 {
+					// we pulled some work from redis, but the client is already gone
+					// so we need to push back work to redis
+					_, err := c.client.RPush(c.key, res[1]).Result()
+					if err != nil {
+						c.logger.Error("Error pushing back work to redis", "error", err)
+					}
+				}
 				return
+			default:
+				if (err != nil && err != redis.Nil) || len(res) > 0 {
+					close(gotIt)
+					return
+				}
 			}
 		}
 	}()
 	select {
 	case <-stop:
 		return nil, context.Canceled
-	case <-gotit:
+	case <-gotIt:
 	}
 	if err != nil {
 		return nil, fmt.Errorf("BLPOP error: %s", err)

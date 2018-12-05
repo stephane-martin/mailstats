@@ -1,22 +1,27 @@
 package main
 
 import (
-	"github.com/urfave/cli"
+	"runtime"
 	"strings"
+
+	"github.com/awnumar/memguard"
+	"github.com/urfave/cli"
 )
 
 type Args struct {
-	SMTP          SMTPArgs
-	Milter        MilterArgs
-	HTTP          HTTPArgs
-	Redis         RedisArgs
-	Consumer      ConsumerArgs
-	Logging       LoggingArgs
-	Forward       ForwardArgs
-	Collector     string
-	CollectorSize int
-	CollectorDir  string
+	SMTP              SMTPArgs
+	Milter            MilterArgs
+	HTTP              HTTPArgs
+	Redis             RedisArgs
+	Consumer          ConsumerArgs
+	Logging           LoggingArgs
+	Forward           ForwardArgs
+	Collector         string
+	CollectorSize     int
+	CollectorDir      string
 	RedisCollectorKey string
+	Secret            *memguard.LockedBuffer
+	NbParsers         int
 }
 
 func GetArgs(c *cli.Context) (*Args, error) {
@@ -85,6 +90,19 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	args.RedisCollectorKey = strings.TrimSpace(c.GlobalString("redis-collector-key"))
 	if args.RedisCollectorKey == "" {
 		args.RedisCollectorKey = "mailstats.collector"
+	}
+
+	sec := strings.TrimSpace(c.GlobalString("secret"))
+	if len(sec) > 0 {
+		secret, err := memguard.NewImmutableFromBytes([]byte(sec))
+		if err != nil {
+			return nil, cli.NewExitError("memguard failed", 1)
+		}
+		args.Secret = secret
+	}
+	args.NbParsers = c.GlobalInt("nbparsers")
+	if args.NbParsers == -1 {
+		args.NbParsers = runtime.NumCPU()
 	}
 
 	return args, nil

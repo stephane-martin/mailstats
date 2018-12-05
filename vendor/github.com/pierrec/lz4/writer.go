@@ -140,6 +140,7 @@ func (z *Writer) Write(buf []byte) (int, error) {
 		}
 		z.idx = 0
 	}
+
 	return n, nil
 }
 

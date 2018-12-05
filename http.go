@@ -3,23 +3,155 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/elliptic"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/go-gomail/gomail"
-	"github.com/inconshreveable/log15"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"github.com/storozhukBM/verifier"
-	"github.com/urfave/cli"
-	"golang.org/x/text/encoding/htmlindex"
 	"io"
 	"io/ioutil"
+	"log"
 	"mime"
 	"net"
 	"net/http"
 	"net/mail"
+	"reflect"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/awnumar/memguard"
+	"github.com/gin-gonic/gin"
+	"github.com/go-gomail/gomail"
+	"github.com/inconshreveable/log15"
+	"github.com/oklog/ulid"
+	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/schollz/pake"
+	"github.com/stephane-martin/mailstats/sbox"
+	"github.com/storozhukBM/verifier"
+	"github.com/uber-go/atomic"
+	"github.com/urfave/cli"
+	"golang.org/x/text/encoding/htmlindex"
 )
+
+var pakeRecipients *PakeRecipients
+var pakeSessionKeys *SessionKeyStore
+var increments *CurrentIncrements
+
+func init() {
+	pakeRecipients = NewPakeRecipients()
+	pakeSessionKeys = NewSessionKeyStore()
+	increments = NewIncrements()
+}
+
+type CurrentIncrements struct {
+	m *sync.Map
+}
+
+func NewIncrements() *CurrentIncrements {
+	return &CurrentIncrements{m: new(sync.Map)}
+}
+
+func (i *CurrentIncrements) NewWorker(workerID ulid.ULID) {
+	i.m.Store(workerID, atomic.NewUint64(0))
+}
+
+func (i *CurrentIncrements) Check(workerID ulid.ULID, increment uint64) error {
+	inc, ok := i.m.Load(workerID)
+	if !ok {
+		return errors.New("unknown worker")
+	}
+	if !(inc.(*atomic.Uint64).Inc() == increment) {
+		// TODO: too brutal
+		i.Erase(workerID)
+		return errors.New("wrong increment")
+	}
+	return nil
+}
+
+func (i *CurrentIncrements) Erase(workerID ulid.ULID) {
+	i.m.Delete(workerID)
+}
+
+type SessionKeyStore struct {
+	m *sync.Map
+}
+
+func NewSessionKeyStore() *SessionKeyStore {
+	return &SessionKeyStore{m: new(sync.Map)}
+}
+
+func (r *SessionKeyStore) Has(workerID ulid.ULID) bool {
+	_, ok := r.m.Load(workerID)
+	return ok
+}
+
+func (r *SessionKeyStore) Put(workerID ulid.ULID, key []byte) error {
+	l, err := memguard.NewImmutableFromBytes(key)
+	if err != nil {
+		return err
+	}
+	_, loaded := r.m.LoadOrStore(workerID, l)
+	if loaded {
+		l.Destroy()
+		return errors.New("worker already initialized")
+	}
+	return nil
+}
+
+func (r *SessionKeyStore) Get(workerID ulid.ULID) (key *memguard.LockedBuffer, err error) {
+	rec, ok := r.m.Load(workerID)
+	if !ok {
+		return nil, errors.New("unknown worker")
+	}
+	return rec.(*memguard.LockedBuffer), nil
+}
+
+func (r *SessionKeyStore) Erase(workerID ulid.ULID) {
+	r.m.Delete(workerID)
+}
+
+func NewRecipient(secret *memguard.LockedBuffer) (*pake.Pake, error) {
+	curve := elliptic.P521()
+	recipient, err := pake.Init(secret.Buffer(), 1, curve)
+	if err != nil {
+		return nil, err
+	}
+	return recipient, nil
+}
+
+type PakeRecipients struct {
+	m *sync.Map
+}
+
+func NewPakeRecipients() *PakeRecipients {
+	return &PakeRecipients{m: new(sync.Map)}
+}
+
+func (r *PakeRecipients) Has(workerID ulid.ULID) bool {
+	_, ok := r.m.Load(workerID)
+	return ok
+}
+
+func (r *PakeRecipients) Put(workerID ulid.ULID, recipient *pake.Pake) error {
+	_, loaded := r.m.LoadOrStore(workerID, recipient)
+	if loaded {
+		return errors.New("worker already initialized")
+	}
+	return nil
+}
+
+func (r *PakeRecipients) Get(workerID ulid.ULID) (recipient *pake.Pake, err error) {
+	rec, ok := r.m.Load(workerID)
+	if !ok {
+		return nil, errors.New("unknown worker")
+	}
+	return rec.(*pake.Pake), nil
+}
+
+func (r *PakeRecipients) Erase(workerID ulid.ULID) {
+	r.m.Delete(workerID)
+}
 
 type HTTPArgs struct {
 	ListenAddr string
@@ -45,18 +177,87 @@ func (args *HTTPArgs) Populate(c *cli.Context) *HTTPArgs {
 	return args
 }
 
-func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger log15.Logger) error {
+type initRequest struct {
+	Pake string `json:"pake"`
+}
+
+type initResponse struct {
+	HK string `json:"hk"`
+}
+
+type authRequest struct {
+	HK string `json:"hk"`
+}
+
+type workRequest struct {
+	RequestID uint64 `json:"request_id"`
+}
+
+type byeRequest struct {
+	RequestID uint64 `json:"request_id"`
+}
+
+type submitRequest struct {
+	RequestID uint64 `json:"request_id"`
+	Features  *FeaturesMail
+}
+
+func prepare(obj interface{}, c *gin.Context) (ulid.ULID, error) {
+	workerID, err := ulid.Parse(c.Param("worker"))
+	if err != nil {
+		return workerID, fmt.Errorf("failed to parse worker ID: %s", err)
+	}
+	key, err := pakeSessionKeys.Get(workerID)
+	if err != nil {
+		return workerID, fmt.Errorf("failed to get session key: %s", err)
+	}
+	body, err := ioutil.ReadAll(c.Request.Body)
+	if err != nil {
+		return workerID, fmt.Errorf("failed to read body: %s", err)
+	}
+	dec, err := sbox.Decrypt(body, key)
+	if err != nil {
+		return workerID, fmt.Errorf("failed to decrypt body: %s", err)
+	}
+	err = json.Unmarshal(dec, obj)
+	if err != nil {
+		return workerID, fmt.Errorf("failed to unmarshal body: %s", err)
+	}
+	if _, ok := reflect.ValueOf(obj).Elem().Type().FieldByName("RequestID"); ok {
+		increment := reflect.ValueOf(obj).Elem().FieldByName("RequestID").Uint()
+		err = increments.Check(workerID, increment)
+		if err != nil {
+			return workerID, fmt.Errorf("increment check failed: %s", err)
+		}
+	}
+	return workerID, nil
+}
+
+type log15Writer struct {
+	logger log15.Logger
+}
+
+func (w *log15Writer) Write(b []byte) (int, error) {
+	w.logger.Info(string(b))
+	return len(b), nil
+}
+
+func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer, collector Collector, consumer Consumer, logger log15.Logger) error {
 	if args.ListenPort <= 0 {
 		return nil
 	}
 	if args.ListenAddr == "" {
 		args.ListenAddr = "127.0.0.1"
 	}
+	gin.SetMode(GinMode)
+	gin.DisableConsoleColor()
+	wr := &log15Writer{logger: logger}
+	gin.DefaultWriter = wr
+	gin.DefaultErrorWriter = wr
+	log.SetOutput(wr)
+	router := gin.Default()
 
-	muxer := http.NewServeMux()
-
-	muxer.Handle(
-		"/metrics",
+	router.Any("/metrics", gin.WrapH(
 		promhttp.HandlerFor(
 			M().Registry,
 			promhttp.HandlerOpts{
@@ -67,37 +268,186 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 				Timeout:             -1,
 			},
 		),
-	)
+	))
 
-	muxer.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(200)
+	router.GET("/status", func(c *gin.Context) {
+		c.Status(200)
 	})
 
-	muxer.HandleFunc("/messages.mime", func(w http.ResponseWriter, r *http.Request) {
+	if secret != nil {
+		router.POST("/worker/init/:worker", func(c *gin.Context) {
+			workerID, err := ulid.Parse(c.Param("worker"))
+			if err != nil {
+				logger.Warn("Failed to parse worker ID", "error", err)
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			var pInit initRequest
+			_ = c.BindJSON(&pInit)
+			logger.Debug("init request", "worker", workerID.String())
+			if pakeSessionKeys.Has(workerID) {
+				logger.Warn("Worker is already authenticated")
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			if pakeRecipients.Has(workerID) {
+				logger.Warn("Worker is already initialized")
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			p, err := base64.StdEncoding.DecodeString(pInit.Pake)
+			if err != nil {
+				logger.Warn("Failed to base64 decode pake init request", "error", err)
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			if secret == nil {
+				logger.Warn("Got a pake init request, but secret is not set")
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			recipient, err := NewRecipient(secret)
+			if err != nil {
+				logger.Warn("Failed to initialize pake recipient", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			err = recipient.Update(p)
+			if err != nil {
+				logger.Warn("Failed to update pake recipient", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			err = pakeRecipients.Put(workerID, recipient)
+			if err != nil {
+				logger.Warn("Failed to store new PAKE recipient", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			c.JSON(200, initResponse{HK: base64.StdEncoding.EncodeToString(recipient.Bytes())})
+		})
+
+		router.POST("/worker/auth/:worker", func(c *gin.Context) {
+			workerID, err := ulid.Parse(c.Param("worker"))
+			if err != nil {
+				logger.Warn("Failed to parse worker ID", "error", err)
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			logger.Debug("auth request", "worker", workerID.String())
+			if pakeSessionKeys.Has(workerID) {
+				logger.Warn("Worker is already authenticated")
+				c.Status(http.StatusBadRequest)
+				return
+			}
+			recipient, err := pakeRecipients.Get(workerID)
+			if err != nil {
+				logger.Warn("Worker is not initialized", "error", err)
+				c.Status(http.StatusBadRequest)
+				return
+			}
+
+			var pAuth authRequest
+			_ = c.BindJSON(&pAuth)
+			hk, err := base64.StdEncoding.DecodeString(pAuth.HK)
+			if err != nil {
+				logger.Warn("Failed to base64 decode work HK", "error", err)
+				c.Status(http.StatusBadRequest)
+				return
+			}
+
+			err = recipient.Update(hk)
+			if err != nil {
+				logger.Warn("Failed to update recipient after auth request", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			skey, err := recipient.SessionKey()
+			if err != nil {
+				logger.Warn("Failed to retrieve session key", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			err = pakeSessionKeys.Put(workerID, skey)
+			if err != nil {
+				logger.Warn("Failed to store new session key", "error", err)
+				c.Status(http.StatusInternalServerError)
+				return
+			}
+			pakeRecipients.Erase(workerID)
+			increments.NewWorker(workerID)
+		})
+
+		router.POST("/worker/bye/:worker", func(c *gin.Context) {
+			var obj byeRequest
+			workerID, err := prepare(&obj, c)
+			if err != nil {
+				logger.Warn("Error decoding worker request", "error", err)
+				return
+			}
+			increments.Erase(workerID)
+			pakeSessionKeys.Erase(workerID)
+		})
+
+		router.POST("/worker/work/:worker", func(c *gin.Context) {
+			var obj workRequest
+			workerID, err := prepare(&obj, c)
+			if err != nil {
+				logger.Warn("Error decoding worker request", "error", err)
+				return
+			}
+			work, err := collector.PullCtx(c.Request.Context())
+			if err == nil {
+				j, err := work.MarshalMsg(nil)
+				if err != nil {
+					c.Status(500)
+					return
+				}
+				key, err := pakeSessionKeys.Get(workerID)
+				if err != nil {
+					c.Status(500)
+					return
+				}
+				enc, err := sbox.Encrypt(j, key)
+				if err != nil {
+					c.Status(500)
+					return
+				}
+				c.Data(200, "application/octet-stream", enc)
+				return
+			}
+			if err == context.Canceled {
+				logger.Debug("Worker is gone")
+				return
+			}
+			logger.Warn("Error getting some work", "error", err)
+			c.Status(500)
+		})
+
+		router.POST("/worker/submit/:worker", func(c *gin.Context) {
+			var features FeaturesMail
+			_, err := prepare(&features, c)
+			if err != nil {
+				logger.Warn("Error decoding worker request", "error", err)
+				return
+			}
+			go func() {
+				consumer.Consume(&features)
+			}()
+		})
+	}
+
+	router.POST("/messages.mime", func(c *gin.Context) {
 		now := time.Now()
-		if r.Method != "POST" {
-			logger.Warn("Incoming /messages.mime is not POST", "method", r.Method)
-			w.WriteHeader(400)
-			return
-		}
-		ct := r.Header.Get("Content-Type")
-		mt, params, err := mime.ParseMediaType(ct)
+
+		ct := c.ContentType()
+		_, params, err := mime.ParseMediaType(ct)
 		if err != nil {
 			logger.Warn("Error parsing media type", "error", err)
-			w.WriteHeader(400)
+			c.Status(400)
 			return
 		}
-		if mt != "multipart/form-data" {
-			logger.Warn("Incoming /messages.mime is not form-data", "contenttype", mt)
-			w.WriteHeader(400)
-			return
-		}
-		err = r.ParseMultipartForm(67108864)
-		if err != nil {
-			logger.Warn("Error parsing message from /messages.mime HTTP endpoint", "error", err)
-			w.WriteHeader(500)
-			return
-		}
+
 		charset := strings.TrimSpace(params["charset"])
 		if charset == "" {
 			charset = "utf-8"
@@ -105,7 +455,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		encoding, err := htmlindex.Get(charset)
 		if err != nil {
 			logger.Warn("Failed to get decoder", "charset", charset)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		}
 		decoder := encoding.NewDecoder()
@@ -118,18 +468,26 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 
 		var message []byte
-		f, _, err := r.FormFile("message")
+		fh, err := c.FormFile("message")
 		if err == http.ErrMissingFile {
-			message = []byte(decode(r.FormValue("message")))
+			message = []byte(decode(c.PostForm("message")))
 		} else if err != nil {
 			logger.Warn("Failed to get message part", "error", err)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		} else {
+			f, err := fh.Open()
+			if err != nil {
+				logger.Warn("Failed to get message part", "error", err)
+				c.Status(500)
+				return
+			}
+			//noinspection GoUnhandledErrorResult
+			defer f.Close()
 			b, err := ioutil.ReadAll(f)
 			if err != nil {
 				logger.Warn("Failed to read message part", "error", err)
-				w.WriteHeader(500)
+				c.Status(500)
 				return
 			}
 			message = b
@@ -137,12 +495,12 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		message = bytes.TrimSpace(message)
 		if len(message) == 0 {
 			logger.Warn("Empty message")
-			w.WriteHeader(400)
+			c.Status(400)
 			return
 		}
 
 		var sender *mail.Address
-		from := strings.TrimSpace(decode(r.Form.Get("from")))
+		from := strings.TrimSpace(decode(c.PostForm("from")))
 		if len(from) > 0 {
 			s, err := mail.ParseAddress(from)
 			if err == nil {
@@ -150,8 +508,8 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			}
 		}
 
-		recipients := make([]*mail.Address, 0, len(r.Form["to"]))
-		for _, recipient := range r.Form["to"] {
+		recipients := make([]*mail.Address, 0)
+		for _, recipient := range c.PostFormArray("to") {
 			recipientAddr, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				recipients = append(recipients, recipientAddr)
@@ -161,7 +519,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		parsed, err := mail.ReadMessage(bytes.NewReader(message))
 		if err != nil {
 			logger.Warn("ReadMessage() error", "error", err)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		}
 
@@ -195,78 +553,37 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		for _, recipient := range recipients {
 			infos.RcptTo = append(infos.RcptTo, recipient.Address)
 		}
-		infos.Addr = r.RemoteAddr
+		infos.Addr = c.ClientIP()
 		infos.Family = "http"
 		infos.Port = args.ListenPort
 		err = collector.PushCtx(ctx, infos)
 		if err != nil {
 			logger.Error("Error pushing HTTP message to collector", "error", err)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		}
 
-		returnParsing := false
-		for _, accept := range r.Header["Accept"] {
-			if strings.Contains(accept, "application/json") {
-				returnParsing = true
-				break
-			}
+		if len(c.Accepted) == 0 {
+			return
 		}
-		if returnParsing {
-			parser := NewParser(logger)
-			defer func() { _ = parser.Close() }()
-			features, err := parser.Parse(infos)
-			if err != nil {
-				logger.Warn("Error calculating features", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-			b, err := json.Marshal(features)
-			if err != nil {
-				logger.Warn("Failed to marshal features", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+		if c.NegotiateFormat("application/json") == "" {
+			return
 		}
+		parser := NewParser(logger)
+		defer func() { _ = parser.Close() }()
+		features, err := parser.Parse(infos)
+		if err != nil {
+			logger.Warn("Error calculating features", "error", err)
+			c.Status(500)
+			return
+		}
+		c.JSON(200, features)
 	})
 
-	muxer.HandleFunc("/messages", func(w http.ResponseWriter, r *http.Request) {
+	router.POST("/messages", func(c *gin.Context) {
 		// cf https://documentation.mailgun.com/en/latest/api-sending
-
 		now := time.Now()
-		if r.Method != "POST" {
-			logger.Warn("Incoming /messages is not POST", "method", r.Method)
-			w.WriteHeader(400)
-			return
-		}
-		ct := r.Header.Get("Content-Type")
-		mt, params, err := mime.ParseMediaType(ct)
-		if err != nil {
-			logger.Warn("Error parsing media type", "error", err)
-			w.WriteHeader(400)
-			return
-		}
-		if mt == "application/x-www-form-urlencoded" {
-			err := r.ParseForm()
-			if err != nil {
-				logger.Warn("Error parsing message from /messages HTTP endpoint", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-		} else if mt == "multipart/form-data" {
-			err := r.ParseMultipartForm(67108864)
-			if err != nil {
-				logger.Warn("Error parsing message from /messages HTTP endpoint", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-		} else {
-			logger.Warn("Incoming /messages is not form-data or urlencoded", "contenttype", mt)
-			w.WriteHeader(400)
-			return
-		}
+		_, params, err := mime.ParseMediaType(c.ContentType())
 		charset := strings.TrimSpace(params["charset"])
 		if charset == "" {
 			charset = "utf-8"
@@ -274,7 +591,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		encoding, err := htmlindex.Get(charset)
 		if err != nil {
 			logger.Warn("Failed to get decoder", "charset", charset)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		}
 		decoder := encoding.NewDecoder()
@@ -293,7 +610,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		message.SetHeader("Date", message.FormatDate(now))
 
 		// from, to, cc, bcc, subject, text, html, attachment
-		from := strings.TrimSpace(decode(r.Form.Get("from")))
+		from := strings.TrimSpace(decode(c.PostForm("from")))
 		if len(from) > 0 {
 			sender, err := mail.ParseAddress(from)
 			if err == nil {
@@ -304,14 +621,14 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			}
 		}
 
-		to := make([]*mail.Address, 0, len(r.Form["to"]))
-		for _, recipient := range r.Form["to"] {
+		to := make([]*mail.Address, 0)
+		for _, recipient := range c.PostFormArray("to") {
 			recipientAddr, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				to = append(to, recipientAddr)
 			}
 		}
-		encodedTo := make([]string, 0, len(to))
+		encodedTo := make([]string, 0)
 		for _, addr := range to {
 			encodedTo = append(encodedTo, message.FormatAddress(addr.Address, addr.Name))
 		}
@@ -320,7 +637,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 
 		cc := make([]string, 0)
-		for _, recipient := range r.Form["cc"] {
+		for _, recipient := range c.PostFormArray("cc") {
 			r, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				cc = append(cc, message.FormatAddress(r.Address, r.Name))
@@ -331,7 +648,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		}
 
 		bcc := make([]string, 0)
-		for _, recipient := range r.Form["bcc"] {
+		for _, recipient := range c.PostFormArray("bcc") {
 			r, err := mail.ParseAddress(decode(recipient))
 			if err == nil {
 				bcc = append(bcc, message.FormatAddress(r.Address, r.Name))
@@ -341,13 +658,13 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			message.SetHeader("Bcc", bcc...)
 		}
 
-		subject := decode(r.Form.Get("subject"))
+		subject := decode(c.PostForm("subject"))
 		if len(subject) > 0 {
 			message.SetHeader("Subject", subject)
 		}
 
-		text := strings.TrimSpace(decode(r.Form.Get("text")))
-		html := strings.TrimSpace(decode(r.Form.Get("html")))
+		text := strings.TrimSpace(decode(c.PostForm("text")))
+		html := strings.TrimSpace(decode(c.PostForm("html")))
 
 		if len(text) > 0 && len(html) > 0 {
 			message.SetBody("text/plain", text)
@@ -358,8 +675,15 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 			message.SetBody("text/html", html)
 		}
 
-		if r.MultipartForm != nil {
-			for _, fheader := range r.MultipartForm.File["attachment"] {
+		forms, err := c.MultipartForm()
+		if err != nil {
+			logger.Warn("Error parsing multipart", "error", err)
+			c.Status(500)
+			return
+		}
+
+		if forms != nil {
+			for _, fheader := range forms.File["attachment"] {
 				message.Attach(fheader.Filename, gomail.SetCopyFunc(func(w io.Writer) error {
 					f, err := fheader.Open()
 					if err != nil {
@@ -375,8 +699,8 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		var b bytes.Buffer
 		_, err = message.WriteTo(&b)
 		if err != nil {
-			logger.Warn("Error marshalling HTTP message to MIME", "error", err)
-			w.WriteHeader(500)
+			logger.Warn("Error marshalling message to MIME", "error", err)
+			c.Status(500)
 			return
 		}
 		infos := new(IncomingMail)
@@ -389,48 +713,39 @@ func StartHTTP(ctx context.Context, args HTTPArgs, collector Collector, logger l
 		for _, addr := range to {
 			infos.RcptTo = append(infos.RcptTo, addr.Address)
 		}
-		infos.Addr = r.RemoteAddr
+		infos.Addr = c.ClientIP()
 		infos.Family = "http"
 		infos.Port = args.ListenPort
 		err = collector.PushCtx(ctx, infos)
 		if err != nil {
 			logger.Error("Error pushing HTTP message to collector", "error", err)
-			w.WriteHeader(500)
+			c.Status(500)
 			return
 		}
 
+		if len(c.Accepted) == 0 {
+			return
+		}
 
-		returnParsing := false
-		for _, accept := range r.Header["Accept"] {
-			if strings.Contains(accept, "application/json") {
-				returnParsing = true
-				break
-			}
+		if c.NegotiateFormat("application/json") == "" {
+			return
 		}
-		if returnParsing {
-			parser := NewParser(logger)
-			defer func() { _ = parser.Close() }()
-			features, err := parser.Parse(infos)
-			if err != nil {
-				logger.Warn("Error calculating features", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-			b, err := json.Marshal(features)
-			if err != nil {
-				logger.Warn("Failed to marshal features", "error", err)
-				w.WriteHeader(500)
-				return
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(b)
+
+		parser := NewParser(logger)
+		defer func() { _ = parser.Close() }()
+		features, err := parser.Parse(infos)
+		if err != nil {
+			logger.Warn("Error calculating features", "error", err)
+			c.Status(500)
+			return
 		}
+		c.JSON(200, features)
 
 	})
 
 	svc := &http.Server{
 		Addr:    net.JoinHostPort(args.ListenAddr, fmt.Sprintf("%d", args.ListenPort)),
-		Handler: muxer,
+		Handler: router,
 	}
 
 	go func() {

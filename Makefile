@@ -10,8 +10,8 @@ BINARY=mailstats
 FULL=github.com/stephane-martin/mailstats
 COMMIT=$(shell git rev-parse HEAD)
 VERSION=0.1.0
-LDFLAGS=-ldflags '-X main.Version=${VERSION}'
-LDFLAGS_RELEASE=-ldflags '-w -s -X main.Version=${VERSION}'
+LDFLAGS=-ldflags '-X main.Version=${VERSION} -X main.GinMode=debug'
+LDFLAGS_RELEASE=-ldflags '-w -s -X main.Version=${VERSION} -X main.GinMode=release'
 
 debug: ${BINARY}_debug
 release: ${BINARY}
