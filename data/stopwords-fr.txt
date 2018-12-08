@@ -65,6 +65,7 @@ boum
 bravo
 brrr
 ceci
+cedex
 cela
 celle
 celle-ci
@@ -245,6 +246,7 @@ lors
 lorsque
 lui-meme
 lui-même
+mailto
 maint
 maintenant
 mais
@@ -468,6 +470,7 @@ telle
 tellement
 telles
 tels
+tél
 tenant
 tend
 tenir

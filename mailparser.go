@@ -9,31 +9,28 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/h2non/filetype/matchers"
+	"github.com/oklog/ulid"
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
+	"github.com/xi2/xz"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
 	"net/mail"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
-	"unicode/utf8"
-
-	"github.com/h2non/filetype/matchers"
-	"github.com/oklog/ulid"
-	"github.com/xi2/xz"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/abadojack/whatlanggo"
 	"github.com/inconshreveable/log15"
-	"github.com/jdkato/prose"
-	"github.com/kljensen/snowball"
 	"github.com/mvdan/xurls"
 	"golang.org/x/net/html"
 	"golang.org/x/text/encoding"
@@ -42,34 +39,6 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-
-var stopWordsEnglish map[string]struct{}
-var stopWordsFrench map[string]struct{}
-
-func init() {
-	enB, err := Asset("data/stopwords-en.txt")
-	if err != nil {
-		panic(err)
-	}
-	enF, err := Asset("data/stopwords-fr.txt")
-	if err != nil {
-		panic(err)
-	}
-	stopWordsEnglish = make(map[string]struct{})
-	stopWordsFrench = make(map[string]struct{})
-	for _, word := range strings.Split(string(enB), "\n") {
-		word = strings.ToLower(strings.TrimSpace(word))
-		if len(word) > 0 {
-			stopWordsEnglish[utils.Normalize(word)] = struct{}{}
-		}
-	}
-	for _, word := range strings.Split(string(enF), "\n") {
-		word = strings.ToLower(strings.TrimSpace(word))
-		if len(word) > 0 {
-			stopWordsFrench[utils.Normalize(word)] = struct{}{}
-		}
-	}
-}
 
 type Parser interface {
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
@@ -140,15 +109,21 @@ func (p *parserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 		urls = append(urls, eurls...)
 		images = append(images, eimages...)
 	}
-	ahtml := b.String()
-	if len(plain) == 0 {
+	ahtml := strings.TrimSpace(b.String())
+	if len(ahtml) > 0 {
 		plain = ahtml
 	}
 	// unicode normalization
 	plain = utils.Normalize(plain)
 
-	urls = append(urls, xurls.Relaxed().FindAllString(plain, -1)...)
-	urls = append(urls, xurls.Relaxed().FindAllString(ahtml, -1)...)
+	moreurls := xurls.Relaxed().FindAllString(plain, -1)
+	moreurls = append(moreurls, xurls.Relaxed().FindAllString(ahtml, -1)...)
+	for _, u := range moreurls {
+		v, err := url.PathUnescape(u)
+		if err == nil {
+			features.Urls = append(features.Urls, v)
+		}
+	}
 	features.Urls = distinct(urls)
 
 	emails := emailRE.FindAllString(plain, -1)
@@ -158,37 +133,20 @@ func (p *parserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 	features.Images = distinct(images)
 
 	if len(plain) > 0 {
-		features.BagOfWords = make(map[string]int)
-		bagOfWords(plain, features.BagOfWords)
 		langInfo := whatlanggo.Detect(plain)
 		if langInfo.Script != nil && langInfo.Lang != -1 {
 			features.Language = strings.ToLower(whatlanggo.Langs[langInfo.Lang])
 		}
+		features.BagOfWords = extractors.BagOfWords(plain, features.Language)
 	}
 
 	if len(features.Language) > 0 {
-		switch features.Language {
-		case "english":
-			for word := range features.BagOfWords {
-				if _, ok := stopWordsEnglish[word]; ok {
-					delete(features.BagOfWords, word)
-				}
-			}
-		case "french":
-			for word := range features.BagOfWords {
-				if _, ok := stopWordsFrench[word]; ok {
-					delete(features.BagOfWords, word)
-				}
-			}
-		default:
-		}
+		stems := extractors.Stems(features.BagOfWords, features.Language)
 		features.BagOfStems = make(map[string]int)
 		for word := range features.BagOfWords {
-			stem, err := snowball.Stem(word, features.Language, true)
-			if err == nil {
-				features.BagOfStems[stem] = features.BagOfStems[stem] + features.BagOfWords[word]
-			}
+			features.BagOfStems[stems[word]] = features.BagOfStems[stems[word]] + features.BagOfWords[word]
 		}
+		features.Keywords = extractors.Keywords(plain, stems, features.Language)
 	}
 
 	if len(features.Headers["date"]) > 0 {
@@ -240,17 +198,6 @@ func distinct(set []string) []string {
 	return set
 }
 
-func bagOfWords(text string, bag map[string]int) {
-	words := extractWords(text)
-	if len(words) == 0 {
-		return
-	}
-	for _, word := range words {
-		bag[word] = bag[word] + 1
-	}
-	return
-}
-
 func filterPlain(plain string) string {
 	plain = strings.TrimSpace(plain)
 	if len(plain) == 0 {
@@ -271,46 +218,7 @@ func filterPlain(plain string) string {
 	return strings.TrimSpace(plain)
 }
 
-func extractWords(text string) (words []string) {
-	text = strings.TrimSpace(text)
-	if len(text) == 0 {
-		return nil
-	}
-	doc, err := prose.NewDocument(text, prose.WithExtraction(false), prose.WithSegmentation(false), prose.WithTagging(false))
-	if err != nil {
-		return nil
-	}
-	for _, tok := range doc.Tokens() {
-		word := filterWord(tok.Text)
-		if len(word) > 0 {
-			words = append(words, word)
-		}
-	}
-	return words
-}
 
-var abbrs = []string{"t'", "s'", "d'", "j'", "l'", "m'", "c'", "n'", "qu'", "«"}
-
-func filterWord(w string) string {
-	w = strings.ToLower(w)
-	for _, abbr := range abbrs {
-		for {
-			w2 := strings.TrimPrefix(w, abbr)
-			if w2 == w {
-				break
-			}
-			w = w2
-		}
-	}
-	w = strings.TrimSuffix(w, "»")
-	if utf8.RuneCountInString(w) <= 3 {
-		return ""
-	}
-	if strings.ContainsAny(w, "«<>0123456789_-~#{}[]()|`^=+°&$£µ%/:;,?§!.@") {
-		return ""
-	}
-	return w
-}
 
 func html2text(h string) (text string, links []string, images []string) {
 	h = strings.TrimSpace(h)
@@ -338,14 +246,20 @@ func html2text(h string) (text string, links []string, images []string) {
 			} else if tagName == "a" {
 				for _, attr := range tok.Attr {
 					if strings.ToLower(attr.Key) == "href" {
-						links = append(links, attr.Val)
+						v, err := url.PathUnescape(attr.Val)
+						if err == nil {
+							links = append(links, v)
+						}
 						break
 					}
 				}
 			} else if tagName == "img" {
 				for _, attr := range tok.Attr {
 					if strings.ToLower(attr.Key) == "src" {
-						images = append(images, attr.Val)
+						v, err := url.PathUnescape(attr.Val)
+						if err == nil {
+							images = append(images, v)
+						}
 						break
 					}
 				}

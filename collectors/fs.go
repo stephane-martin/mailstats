@@ -21,6 +21,9 @@ func NewFSCollector(root string, logger log15.Logger) (*FSCollector, error) {
 
 func (c *FSCollector) Push(stop <-chan struct{}, info *models.IncomingMail) error {
 	metrics.M().MailFrom.WithLabelValues(info.MailFrom).Inc()
+	for _, r := range info.RcptTo {
+		metrics.M().MailTo.WithLabelValues(r).Inc()
+	}
 	err := c.store.New(info.UID, info)
 	if err == nil {
 		metrics.M().CollectorSize.Inc()

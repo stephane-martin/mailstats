@@ -33,6 +33,9 @@ func NewChanCollector(size int, logger log15.Logger) (*ChanCollector, error) {
 
 func (c *ChanCollector) Push(stop <-chan struct{}, info *models.IncomingMail) error {
 	metrics.M().MailFrom.WithLabelValues(info.MailFrom).Inc()
+	for _, r := range info.RcptTo {
+		metrics.M().MailTo.WithLabelValues(r).Inc()
+	}
 	select {
 	case c.ch <- info:
 		metrics.M().CollectorSize.Inc()

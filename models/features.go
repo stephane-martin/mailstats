@@ -10,14 +10,13 @@ type FeaturesMail struct {
 	TimeReported string              `json:"timereported,omitempty"`
 	Headers      map[string][]string `json:"headers,omitempty"`
 	Attachments  []*Attachment       `json:"attachments,omitempty"`
-	// TODO: textrank
-	BagOfWords map[string]int `json:"bag_of_words,omitempty"`
-	BagOfStems map[string]int `json:"bag_of_stems,omitempty"`
-	Language   string         `json:"language,omitempty"`
-	TimeHeader string         `json:"time_header,omitempty"`
+	BagOfWords   map[string]int      `json:"bag_of_words,omitempty"`
+	BagOfStems   map[string]int      `json:"bag_of_stems,omitempty"`
+	Keywords     []string            `json:"keywords,omitempty"`
+	Language     string              `json:"language,omitempty"`
+	TimeHeader   string              `json:"time_header,omitempty"`
 	// TODO: check that From is consistent/scam
-	From Address `json:"from,omitempty"`
-	// TODO: metrics about recipients
+	From   Address   `json:"from,omitempty"`
 	To     []Address `json:"to,omitempty"`
 	Title  string    `json:"title,omitempty"`
 	Emails []string  `json:"emails,omitempty"`
@@ -64,7 +63,6 @@ type PDFMeta struct {
 	Optimized      bool       `json:"optimized"`
 	Version        string     `json:"version,omitempty"`
 }
-
 
 type ArchiveFile struct {
 	Name        string `json:"name,omitempty"`

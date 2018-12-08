@@ -329,11 +329,10 @@ func MakeApp() *cli.App {
 						}
 						content = string(c)
 					}
-					words := TextRank(content, l)
-					for word, q := range words {
-						fmt.Println(word, q)
+					words := extractors.Keywords(content, nil, l)
+					for _, word := range words {
+						fmt.Println(word)
 					}
-
 				}
 				return nil
 			},

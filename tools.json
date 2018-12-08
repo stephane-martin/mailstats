@@ -1,0 +1,13 @@
+{
+  "Tools": [
+    {
+      "Repository": "github.com/kevinburke/go-bindata/go-bindata",
+      "Commit": "957fdf2615298726cf812ba1f356752160e97734"
+    },
+    {
+      "Repository": "github.com/tinylib/msgp",
+      "Commit": "af6442a0fcf6e2a1b824f70dd0c734f01e817751"
+    }
+  ],
+  "RetoolVersion": "1.3.7"
+}

@@ -14,3 +14,6 @@
 /mailstats
 /mailstats_debug
 /.idea/
+/retool
+/_tools/
+/.tools_sync

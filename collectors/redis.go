@@ -33,6 +33,9 @@ func NewRedisCollector(args *arguments.Args, logger log15.Logger) (*RedisCollect
 
 func (c *RedisCollector) Push(stop <-chan struct{}, info *models.IncomingMail) error {
 	metrics.M().MailFrom.WithLabelValues(info.MailFrom).Inc()
+	for _, r := range info.RcptTo {
+		metrics.M().MailTo.WithLabelValues(r).Inc()
+	}
 	var buffer bytes.Buffer
 	w := lz4.NewWriter(&buffer)
 	w.Header = lz4.Header{
