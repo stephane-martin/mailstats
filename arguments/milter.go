@@ -27,7 +27,13 @@ func (args *MilterArgs) Populate(c *cli.Context) *MilterArgs {
 		args = new(MilterArgs)
 	}
 	args.ListenPort = c.Int("lport")
+	if args.ListenPort == 0 {
+		args.ListenPort = 3333
+	}
 	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
+	if args.ListenAddr == "" {
+		args.ListenAddr = "127.0.0.1"
+	}
 	args.Inetd = c.GlobalBool("inetd")
 	return args
 }

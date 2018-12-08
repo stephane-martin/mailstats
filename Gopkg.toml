@@ -126,6 +126,10 @@
 	name = "github.com/DavidBelicza/TextRank"
 	version = "2.1.1"
 
+[[constraint]]
+    name = "github.com/blabber/mbox"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

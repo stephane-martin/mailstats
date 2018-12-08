@@ -16,9 +16,6 @@ import (
 )
 
 
-
-
-
 func MakeApp() *cli.App {
 	app := cli.NewApp()
 	app.Name = "mailstats"
@@ -226,6 +223,17 @@ func MakeApp() *cli.App {
 			Action: Dump,
 		},
 		{
+			Name: "mbox",
+			Usage: "read a mboxrd file",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "filename, f",
+					Usage: "the mbox file to read",
+				},
+			},
+			Action: MBoxAction,
+		},
+		{
 			Name:   "pdfinfo",
 			Usage:  "extract metadata from PDF",
 			Action: func(c *cli.Context) error {
@@ -273,7 +281,7 @@ func MakeApp() *cli.App {
 			},
 		},
 		{
-			Name:  "textrank",
+			Name:  "keywords",
 			Usage: "extract keywords from text",
 			Flags: []cli.Flag{
 				cli.StringFlag{

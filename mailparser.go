@@ -622,14 +622,15 @@ func ParseMails(ctx context.Context, collector collectors.Collector, parser Pars
 					logger.Info("Failed to parse message", "error", err)
 					continue L
 				}
-				go func() {
+				g.Go(func() error {
 					err := consumer.Consume(features)
 					if err != nil {
 						logger.Warn("Failed to consume parsing results", "error", err)
 					} else {
-						logger.Info("Parsing results sent to consumer")
+						logger.Debug("Parsing results sent to consumer")
 					}
-				}()
+					return err
+				})
 
 			}
 		})

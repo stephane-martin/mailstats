@@ -42,6 +42,14 @@
   revision = "3a771d992973f24aa725d07868b467d1ddfceafb"
 
 [[projects]]
+  branch = "master"
+  digest = "1:f12d4a7128c80c6d7b5ef3a7b9f1501d9166b3afa58a6b4c75e1688c4578bbad"
+  name = "github.com/blabber/mbox"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1ce958f907de4a9e5419e827f24ca8615e28995d"
+
+[[projects]]
   digest = "1:e47d51dab652d26c3fba6f8cba403f922d02757a82abdc77e90df7948daf296e"
   name = "github.com/deckarep/golang-set"
   packages = ["."]
@@ -581,6 +589,7 @@
     "github.com/DavidBelicza/TextRank/rank",
     "github.com/abadojack/whatlanggo",
     "github.com/awnumar/memguard",
+    "github.com/blabber/mbox",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
     "github.com/fsnotify/fsnotify",

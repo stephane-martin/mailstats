@@ -31,7 +31,13 @@ func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
 		args = new(SMTPArgs)
 	}
 	args.ListenPort = c.Int("lport")
+	if args.ListenPort == 0 {
+		args.ListenPort = 3333
+	}
 	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
+	if args.ListenAddr == "" {
+		args.ListenAddr = "127.0.0.1"
+	}
 	args.MaxMessageSize = c.Int("max-size")
 	args.MaxIdle = c.Int("max-idle")
 	args.Inetd = c.GlobalBool("inetd")
