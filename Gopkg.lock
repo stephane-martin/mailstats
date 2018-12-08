@@ -578,6 +578,7 @@
   analyzer-version = 1
   input-imports = [
     "github.com/DavidBelicza/TextRank",
+    "github.com/DavidBelicza/TextRank/rank",
     "github.com/abadojack/whatlanggo",
     "github.com/awnumar/memguard",
     "github.com/emersion/go-sasl",
