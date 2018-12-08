@@ -8,12 +8,13 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
-	"github.com/h2non/filetype/matchers"
-	"github.com/oklog/ulid"
-	"github.com/xi2/xz"
-	"golang.org/x/sync/errgroup"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -23,6 +24,11 @@ import (
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"github.com/h2non/filetype/matchers"
+	"github.com/oklog/ulid"
+	"github.com/xi2/xz"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/abadojack/whatlanggo"
 	"github.com/inconshreveable/log15"
@@ -36,42 +42,6 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-type FeaturesMail struct {
-	BaseInfos
-	UID          string              `json:"uid,omitempty"`
-	Size         int                 `json:"size"`
-	ContentType  string              `json:"content_type,omitempty"`
-	TimeReported string              `json:"timereported,omitempty"`
-	Headers      map[string][]string `json:"headers,omitempty"`
-	Attachments  []*Attachment       `json:"attachments,omitempty"`
-	BagOfWords   map[string]int      `json:"bag_of_words,omitempty"`
-	BagOfStems   map[string]int      `json:"bag_of_stems,omitempty"`
-	Language     string              `json:"language,omitempty"`
-	TimeHeader   string              `json:"time_header,omitempty"`
-	From         Address             `json:"from,omitempty"`
-	To           []Address           `json:"to,omitempty"`
-	Title        string              `json:"title,omitempty"`
-	Emails       []string            `json:"emails,omitempty"`
-	Urls         []string            `json:"urls,omitempty"`
-	Images       []string            `json:"images,omitempty"`
-}
-
-type Attachment struct {
-	Name          string                 `json:"name,omitempty"`
-	InferredType  string                 `json:"inferred_type,omitempty"`
-	ReportedType  string                 `json:"reported_type,omitempty"`
-	Size          uint64                 `json:"size"`
-	Hash          string                 `json:"hash,omitempty"`
-	PDFMetadata   *PDFMeta               `json:"pdf_metadata,omitempty"`
-	ImageMetadata map[string]interface{} `json:"image_metadata,omitempty"`
-	Archives      map[string]*Archive    `json:"archive_content,omitempty"`
-	SubAttachment *Attachment            `json:"sub_attachment,omitempty"`
-}
-
-type Address struct {
-	Name    string `json:"name,omitempty"`
-	Address string `json:"address,omitempty"`
-}
 
 var stopWordsEnglish map[string]struct{}
 var stopWordsFrench map[string]struct{}
@@ -90,29 +60,29 @@ func init() {
 	for _, word := range strings.Split(string(enB), "\n") {
 		word = strings.ToLower(strings.TrimSpace(word))
 		if len(word) > 0 {
-			stopWordsEnglish[word] = struct{}{}
+			stopWordsEnglish[utils.Normalize(word)] = struct{}{}
 		}
 	}
 	for _, word := range strings.Split(string(enF), "\n") {
 		word = strings.ToLower(strings.TrimSpace(word))
 		if len(word) > 0 {
-			stopWordsFrench[normalize(word)] = struct{}{}
+			stopWordsFrench[utils.Normalize(word)] = struct{}{}
 		}
 	}
 }
 
 type Parser interface {
-	Parse(i *IncomingMail) (*FeaturesMail, error)
+	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
 	Close() error
 }
 
 type parserImpl struct {
 	logger log15.Logger
-	tool   *ExifToolWrapper
+	tool   *extractors.ExifToolWrapper
 }
 
 func NewParser(logger log15.Logger) *parserImpl {
-	tool, err := NewExifToolWrapper()
+	tool, err := extractors.NewExifToolWrapper()
 	if err != nil {
 		logger.Info("Failed to locate exiftool", "error", err)
 		return &parserImpl{logger: logger}
@@ -127,12 +97,12 @@ func (p *parserImpl) Close() error {
 	return nil
 }
 
-func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) {
+func (p *parserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
 	m, err := mail.ReadMessage(bytes.NewReader(i.Data))
 	if err != nil {
 		return nil, err
 	}
-	features = new(FeaturesMail)
+	features = new(models.FeaturesMail)
 	features.BaseInfos = i.BaseInfos
 	uid := ulid.ULID(i.BaseInfos.UID).String()
 	features.UID = uid
@@ -175,7 +145,7 @@ func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) 
 		plain = ahtml
 	}
 	// unicode normalization
-	plain = normalize(plain)
+	plain = utils.Normalize(plain)
 
 	urls = append(urls, xurls.Relaxed().FindAllString(plain, -1)...)
 	urls = append(urls, xurls.Relaxed().FindAllString(ahtml, -1)...)
@@ -233,7 +203,7 @@ func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) 
 		addr := features.Headers["from"][0]
 		paddr, err := mail.ParseAddress(addr)
 		if err == nil {
-			features.From = Address(*paddr)
+			features.From = models.Address(*paddr)
 		}
 		delete(features.Headers, "from")
 	}
@@ -242,7 +212,7 @@ func (p *parserImpl) Parse(i *IncomingMail) (features *FeaturesMail, err error) 
 		paddrs, err := mail.ParseAddressList(features.Headers["to"][0])
 		if err == nil {
 			for _, paddr := range paddrs {
-				features.To = append(features.To, Address(*paddr))
+				features.To = append(features.To, models.Address(*paddr))
 			}
 		}
 		delete(features.Headers, "to")
@@ -350,6 +320,7 @@ func html2text(h string) (text string, links []string, images []string) {
 	texts := make([]string, 0)
 	z := html.NewTokenizer(strings.NewReader(h))
 	ignoreScript := false
+	ignoreNoScript := false
 	ignoreStyle := false
 	for {
 		t := z.Next()
@@ -360,6 +331,8 @@ func html2text(h string) (text string, links []string, images []string) {
 			tagName := strings.ToLower(tok.Data)
 			if tagName == "script" {
 				ignoreScript = true
+			} else if tagName == "noscript" {
+				ignoreNoScript = true
 			} else if tagName == "style" {
 				ignoreStyle = true
 			} else if tagName == "a" {
@@ -383,10 +356,14 @@ func html2text(h string) (text string, links []string, images []string) {
 			tagName := strings.ToLower(tok.Data)
 			if tagName == "script" {
 				ignoreScript = false
+			} else if tagName == "noscript" {
+				ignoreNoScript = false
 			} else if tagName == "style" {
 				ignoreStyle = false
+			} else if tagName == "title" || tagName == "h1" || tagName == "h2" || tagName == "h3" || tagName == "h4" || tagName == "h5" || tagName == "h6" {
+				texts = append(texts, ".")
 			}
-		} else if t == html.TextToken && !ignoreScript && !ignoreStyle {
+		} else if t == html.TextToken && !ignoreScript && !ignoreStyle && !ignoreNoScript {
 			tok := z.Token()
 			textData := strings.TrimSpace(tok.Data)
 			if len(textData) > 0 {
@@ -438,10 +415,10 @@ func decodeUtf8(body io.Reader) (string, error) {
 	return string(res), nil
 }
 
-func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (string, string, []string, []*Attachment) {
+func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Logger) (string, string, []string, []*models.Attachment) {
 	plain := ""
 	var htmls []string
-	var attachments []*Attachment
+	var attachments []*models.Attachment
 
 	msg, err := mail.ReadMessage(part)
 	if err != nil {
@@ -551,16 +528,16 @@ func ParsePart(part io.Reader, tool *ExifToolWrapper, logger log15.Logger) (stri
 	return contentType, plain, htmls, attachments
 }
 
-func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper, logger log15.Logger) (*Attachment, error) {
+func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifToolWrapper, logger log15.Logger) (*models.Attachment, error) {
 	content, err := ioutil.ReadAll(reader)
 	if err != nil {
 		return nil, err
 	}
-	attachment := &Attachment{Name: filename, Size: uint64(len(content))}
+	attachment := &models.Attachment{Name: filename, Size: uint64(len(content))}
 	h := sha256.Sum256(content)
 	attachment.Hash = hex.EncodeToString(h[:])
 
-	typ, err := Guess(content)
+	typ, err := utils.Guess(content)
 	if err != nil {
 		return nil, err
 	}
@@ -569,7 +546,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 
 	switch typ {
 	case matchers.TypePdf:
-		m, err := PDFBytesInfo(content)
+		m, err := extractors.PDFBytesInfo(content)
 		if err != nil {
 			logger.Warn("Error extracting metadata from PDF", "error", err)
 		} else {
@@ -590,7 +567,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 			logger.Warn("Error analyzing archive", "error", err)
 		} else {
 			if attachment.Archives == nil {
-				attachment.Archives = make(map[string]*Archive)
+				attachment.Archives = make(map[string]*models.Archive)
 			}
 			attachment.Archives[filename] = archive
 		}
@@ -640,8 +617,6 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *ExifToolWrapper,
 		}
 
 	}
-
-
 
 	return attachment, nil
 }
@@ -704,7 +679,7 @@ func StringDecode(text string) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
-func ParseMails(ctx context.Context, collector Collector, parser Parser, consumer Consumer, forwarder Forwarder, nbParsers int, logger log15.Logger) error {
+func ParseMails(ctx context.Context, collector collectors.Collector, parser Parser, consumer consumers.Consumer, forwarder forwarders.Forwarder, nbParsers int, logger log15.Logger) error {
 	g, lctx := errgroup.WithContext(ctx)
 
 	if nbParsers == 0 {
@@ -725,7 +700,7 @@ func ParseMails(ctx context.Context, collector Collector, parser Parser, consume
 					continue L
 				}
 				if incoming == nil {
-					return errors.New("incoming mail is nil :(")
+					continue L
 				}
 				forwarder.Push(*incoming)
 				features, err := parser.Parse(incoming)
@@ -733,7 +708,6 @@ func ParseMails(ctx context.Context, collector Collector, parser Parser, consume
 					logger.Info("Failed to parse message", "error", err)
 					continue L
 				}
-				// TODO: in own single goroutine ?
 				go func() {
 					err := consumer.Consume(features)
 					if err != nil {

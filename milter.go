@@ -4,44 +4,25 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"net"
 	"net/textproto"
 	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/phalaaxx/milter"
-	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
 )
 
-type MilterArgs struct {
-	ListenAddr string
-	ListenPort int
-	Inetd      bool
-}
 
-func (args MilterArgs) Verify() error {
-	v := verifier.New()
-	v.That(args.ListenPort > 0, "The listen port must be positive")
-	v.That(len(args.ListenAddr) > 0, "The listen address is empty")
-	p := net.ParseIP(args.ListenAddr)
-	v.That(p != nil, "The listen address is invalid")
-	return v.GetError()
-}
-
-func (args *MilterArgs) Populate(c *cli.Context) *MilterArgs {
-	if args == nil {
-		args = new(MilterArgs)
-	}
-	args.ListenPort = c.Int("lport")
-	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
-	args.Inetd = c.GlobalBool("inetd")
-	return args
-}
 
 type milterMessage struct {
 	host    string
@@ -65,8 +46,8 @@ func (m *milterMessage) Reset() {
 	m.builder.Reset()
 }
 
-func (m *milterMessage) make() *IncomingMail {
-	info := new(IncomingMail)
+func (m *milterMessage) make() *models.IncomingMail {
+	info := new(models.IncomingMail)
 	info.Host = m.host
 	info.Family = m.family
 	info.Port = m.port
@@ -76,14 +57,14 @@ func (m *milterMessage) make() *IncomingMail {
 	info.RcptTo = append(info.RcptTo, m.to...)
 	info.Data = m.builder.Bytes()
 	info.TimeReported = time.Now()
-	info.UID = NewULID()
+	info.UID = utils.NewULID()
 	m.Reset()
 	return info
 }
 
 type StatsMilter struct {
 	message   milterMessage
-	collector Collector
+	collector collectors.Collector
 	stop      <-chan struct{}
 }
 
@@ -142,18 +123,18 @@ func (e *StatsMilter) Body(m *milter.Modifier) (milter.Response, error) {
 }
 
 func Milter(c *cli.Context) error {
-	args, err := GetArgs(c)
+	args, err := arguments.GetArgs(c)
 	if err != nil {
 		return err
 	}
 
 	logger := args.Logging.Build()
 
-	consumer, err := MakeConsumer(*args)
+	consumer, err := consumers.MakeConsumer(*args)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
-	forwarder, err := args.Forward.Build(logger)
+	forwarder, err := forwarders.Build(args.Forward, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
 	}
@@ -168,7 +149,7 @@ func Milter(c *cli.Context) error {
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Listen() has failed: %s", err), 2)
 	}
-	listener = WrapListener(listener, "milter", logger)
+	listener = utils.WrapListener(listener, "milter", logger)
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
@@ -181,7 +162,7 @@ func Milter(c *cli.Context) error {
 	}()
 
 	parser := NewParser(logger)
-	collector, err := NewCollector(args, logger)
+	collector, err := collectors.NewCollector(args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}

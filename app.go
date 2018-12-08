@@ -2,10 +2,22 @@ package main
 
 import (
 	"crypto/elliptic"
+	"encoding/json"
+	"fmt"
+	"github.com/stephane-martin/mailstats/extractors"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/schollz/pake"
 	"github.com/urfave/cli"
 )
+
+
+
+
 
 func MakeApp() *cli.App {
 	app := cli.NewApp()
@@ -216,12 +228,163 @@ func MakeApp() *cli.App {
 		{
 			Name:   "pdfinfo",
 			Usage:  "extract metadata from PDF",
-			Action: PDFInfoAction,
+			Action: func(c *cli.Context) error {
+				filename := c.String("filename")
+				if filename == "" {
+					return cli.NewExitError("No filename", 1)
+				}
+				meta, err := extractors.PDFInfo(filename)
+				if err != nil {
+					return cli.NewExitError(err, 2)
+				}
+				b, err := json.Marshal(meta)
+				if err != nil {
+					return cli.NewExitError(err, 2)
+				}
+				fmt.Println(string(b))
+				return nil
+			},
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "filename, f",
 					Usage: "PDF file to analyze",
 				},
+			},
+		},
+		{
+			Name: "pdftotext",
+			Usage: "convert PDF to text",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "filename, f",
+					Usage: "PDF file to process",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				f := strings.TrimSpace(c.String("filename"))
+				if f != "" {
+					content, err := extractors.PDFToText(f)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					fmt.Println(content)
+				}
+				return nil
+			},
+		},
+		{
+			Name:  "textrank",
+			Usage: "extract keywords from text",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "filename, f",
+					Usage: "File to process",
+				},
+				cli.StringFlag{
+					Name: "language, l",
+					Usage: "language of text",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				l := strings.ToLower(strings.TrimSpace(c.String("language")))
+				switch l {
+				case "en":
+					l = "english"
+				case "fr":
+					l = "french"
+				}
+				f := strings.TrimSpace(c.String("filename"))
+				if f != "" {
+					content := ""
+					ext := strings.ToLower(filepath.Ext(f))
+					switch ext {
+					case ".pdf":
+						var err error
+						content, err = extractors.PDFToText(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+					case ".docx":
+						var err error
+						content, _, err = extractors.ConvertDocx(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+					case ".odt":
+						var err error
+						content, _, err = extractors.ConvertODT(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+					default:
+						fil, err := os.Open(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						//noinspection GoUnhandledErrorResult
+						defer fil.Close()
+						c, err := ioutil.ReadAll(fil)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						content = string(c)
+					}
+					words := TextRank(content, l)
+					for word, q := range words {
+						fmt.Println(word, q)
+					}
+
+				}
+				return nil
+			},
+		},
+		{
+			Name:  "html2text",
+			Usage: "convert a HTML document to text",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "url, u",
+					Usage: "URL to convert",
+				},
+				cli.StringFlag{
+					Name:  "filename, f",
+					Usage: "HTML file to convert",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				f := strings.TrimSpace(c.String("filename"))
+				u := strings.TrimSpace(c.String("url"))
+				content := ""
+				if u != "" {
+					resp, err := http.Get(u)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					defer resp.Body.Close()
+					c, err := ioutil.ReadAll(resp.Body)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					content = string(c)
+				} else if f != "" {
+					fil, err := os.Open(f)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer fil.Close()
+					c, err := ioutil.ReadAll(fil)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					content = string(c)
+				}
+				content = strings.TrimSpace(content)
+				if content != "" {
+					t, _, _ := html2text(content)
+					fmt.Println(t)
+				}
+				return nil
 			},
 		},
 	}

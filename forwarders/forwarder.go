@@ -1,4 +1,4 @@
-package main
+package forwarders
 
 import (
 	"context"
@@ -7,103 +7,48 @@ import (
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 	"github.com/inconshreveable/log15"
-	"github.com/storozhukBM/verifier"
-	"github.com/urfave/cli"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/models"
 	"net"
-	"net/url"
-	"strings"
 	"sync"
 	"time"
 )
 
-func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
-	if args == nil {
-		args = new(SMTPArgs)
-	}
-	args.ListenPort = c.Int("lport")
-	args.ListenAddr = strings.TrimSpace(c.String("laddr"))
-	args.MaxMessageSize = c.Int("max-size")
-	args.MaxIdle = c.Int("max-idle")
-	args.Inetd = c.GlobalBool("inetd")
-	return args
-}
 
-type ForwardArgs struct {
-	URL string
-}
-
-func (args ForwardArgs) Parsed() (scheme, host, port, username, password string) {
-	if args.URL == "" {
-		return "", "", "", "", ""
-	}
-	u, _ := url.Parse(args.URL)
-	host, port, _ = net.SplitHostPort(u.Host)
-	password, _ = u.User.Password()
-	return strings.ToLower(strings.TrimSpace(u.Scheme)),
-		strings.TrimSpace(host),
-		strings.TrimSpace(port),
-		strings.TrimSpace(u.User.Username()),
-		strings.TrimSpace(password)
-}
-
-func (args ForwardArgs) Verify() error {
-	if args.URL == "" {
-		return nil
-	}
-	u, err := url.Parse(args.URL)
-	v := verifier.New()
-	v.That(err == nil, "Invalid SMTP forward URL")
-	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
-	v.That(scheme == "smtp" || scheme == "smtps", "Forward URL scheme is not smtp")
-	v.That(len(u.Host) > 0, "Forward host is empty")
-	h, p, err := net.SplitHostPort(u.Host)
-	v.That(err == nil, "Forward host must be host:port")
-	v.That(len(h) > 0, "Forward host is empty")
-	v.That(len(p) > 0, "Forward port is empty")
-	return v.GetError()
-}
-
-func (args *ForwardArgs) Populate(c *cli.Context) *ForwardArgs {
-	if args == nil {
-		args = new(ForwardArgs)
-	}
-	args.URL = strings.TrimSpace(c.GlobalString("forward"))
-	return args
-}
-
-func (args ForwardArgs) Build(logger log15.Logger) (Forwarder, error) {
+func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
 	scheme, host, port, username, password := args.Parsed()
 	if host == "" {
 		logger.Info("No forwarding")
 		return DummyForwarder{}, nil
 	}
 	var f SMTPForwarder
-	mailsChan := make(chan IncomingMail, 10000)
+	mailsChan := make(chan models.IncomingMail, 10000)
 	if len(username) == 0 || len(password) == 0 {
 		logger.Info("Forwarding without auth", "scheme", scheme, "host", host, "port", port)
 		f = SMTPForwarder{
-			scheme: scheme,
-			host:   host,
-			port:   port,
-			logger: logger,
-			mails:  mailsChan,
+			Scheme: scheme,
+			Host:   host,
+			Port:   port,
+			Logger: logger,
+			Mails:  mailsChan,
 		}
 	} else {
 		logger.Info("Forwarding", "scheme", scheme, "host", host, "port", port, "username", username)
 		f = SMTPForwarder{
-			scheme:   scheme,
-			host:     host,
-			port:     port,
-			username: username,
-			password: password,
-			logger:   logger,
-			mails:    mailsChan,
+			Scheme:   scheme,
+			Host:     host,
+			Port:     port,
+			Username: username,
+			Password: password,
+			Logger:   logger,
+			Mails:    mailsChan,
 		}
 	}
 	return f, nil
 }
 
-func chan2buffer(c chan IncomingMail) (buffer []IncomingMail, stop bool) {
+
+func chan2buffer(c chan models.IncomingMail) (buffer []models.IncomingMail, stop bool) {
 	for {
 		select {
 		case email, more := <-c:
@@ -119,7 +64,7 @@ func chan2buffer(c chan IncomingMail) (buffer []IncomingMail, stop bool) {
 }
 
 type Forwarder interface {
-	Push(mail IncomingMail)
+	Push(mail models.IncomingMail)
 	Start(ctx context.Context) error
 	Close() error
 	GetLogger() log15.Logger
@@ -127,7 +72,7 @@ type Forwarder interface {
 
 type DummyForwarder struct{}
 
-func (_ DummyForwarder) Push(_ IncomingMail) {}
+func (_ DummyForwarder) Push(_ models.IncomingMail) {}
 
 func (_ DummyForwarder) GetLogger() log15.Logger {
 	return nil
@@ -143,39 +88,39 @@ func (_ DummyForwarder) Start(ctx context.Context) error {
 }
 
 type SMTPForwarder struct {
-	scheme    string
-	host      string
-	port      string
-	username  string
-	password  string
-	logger    log15.Logger
-	mails     chan IncomingMail
-	closeOnce sync.Once
+	Scheme    string
+	Host      string
+	Port      string
+	Username  string
+	Password  string
+	Logger    log15.Logger
+	Mails     chan models.IncomingMail
+	CloseOnce sync.Once
 }
 
 func (f SMTPForwarder) GetLogger() log15.Logger {
-	return f.logger
+	return f.Logger
 }
 
 func (f SMTPForwarder) Close() error {
-	close(f.mails)
+	close(f.Mails)
 	return nil
 }
 
 func (f SMTPForwarder) Start(ctx context.Context) error {
 	var stop bool
-	var rest []IncomingMail
+	var rest []models.IncomingMail
 	var err error
-	buffer := make([]IncomingMail, 0)
+	buffer := make([]models.IncomingMail, 0)
 	for {
-		buffer, stop = chan2buffer(f.mails)
+		buffer, stop = chan2buffer(f.Mails)
 		if len(rest) > 0 {
 			buffer = append(buffer, rest...)
 		}
 		if len(buffer) > 0 {
 			rest, err = f.forward(buffer)
 			if err != nil {
-				f.logger.Warn("Error forwarding emails", "error", err)
+				f.Logger.Warn("Error forwarding emails", "error", err)
 				select {
 				case <-ctx.Done():
 					return context.Canceled
@@ -183,10 +128,10 @@ func (f SMTPForwarder) Start(ctx context.Context) error {
 				}
 			}
 		} else if stop {
-			f.logger.Info("Stop forwarding emails")
+			f.Logger.Info("Stop forwarding emails")
 			return nil
 		} else {
-			f.logger.Debug("No email to forward")
+			f.Logger.Debug("No email to forward")
 			select {
 			case <-ctx.Done():
 				return context.Canceled
@@ -196,11 +141,11 @@ func (f SMTPForwarder) Start(ctx context.Context) error {
 	}
 }
 
-func (f SMTPForwarder) Push(email IncomingMail) {
-	f.mails <- email
+func (f SMTPForwarder) Push(email models.IncomingMail) {
+	f.Mails <- email
 }
 
-func _forward(email IncomingMail, client *smtp.Client) (err error) {
+func _forward(email models.IncomingMail, client *smtp.Client) (err error) {
 	if len(email.RcptTo) == 0 || len(email.MailFrom) == 0 {
 		return nil
 	}
@@ -227,7 +172,7 @@ func _forward(email IncomingMail, client *smtp.Client) (err error) {
 	return nil
 }
 
-func (f SMTPForwarder) forward(emails []IncomingMail) (rest []IncomingMail, err error) {
+func (f SMTPForwarder) forward(emails []models.IncomingMail) (rest []models.IncomingMail, err error) {
 	if len(emails) == 0 {
 		return nil, nil
 	}
@@ -236,17 +181,17 @@ func (f SMTPForwarder) forward(emails []IncomingMail) (rest []IncomingMail, err 
 	var conn net.Conn
 	var client *smtp.Client
 
-	if f.scheme == "http" {
-		conn, err = net.Dial("tcp", net.JoinHostPort(f.host, f.port))
+	if f.Scheme == "http" {
+		conn, err = net.Dial("tcp", net.JoinHostPort(f.Host, f.Port))
 	} else {
-		conn, err = tls.Dial("tcp", net.JoinHostPort(f.host, f.port), nil)
+		conn, err = tls.Dial("tcp", net.JoinHostPort(f.Host, f.Port), nil)
 	}
 	if err != nil {
 		return emails, fmt.Errorf("failed to dial remote SMTP service: %s", err)
 	}
 	defer func() { _ = conn.Close() }()
 
-	client, err = smtp.NewClient(conn, f.host)
+	client, err = smtp.NewClient(conn, f.Host)
 	if err != nil {
 		return emails, fmt.Errorf("failed to build SMTP client: %s", err)
 	}
@@ -258,15 +203,15 @@ func (f SMTPForwarder) forward(emails []IncomingMail) (rest []IncomingMail, err 
 	}
 
 	supportStartTLS, _ := client.Extension("STARTTLS")
-	if supportStartTLS && f.scheme == "smtp" {
-		err := client.StartTLS(&tls.Config{ServerName: f.host})
+	if supportStartTLS && f.Scheme == "smtp" {
+		err := client.StartTLS(&tls.Config{ServerName: f.Host})
 		if err != nil {
 			return emails, fmt.Errorf("error while doing STARTTLS: %s", err)
 		}
 	}
 	supportAuth, _ := client.Extension("AUTH")
-	if supportAuth && len(f.username) > 0 {
-		err := client.Auth(sasl.NewPlainClient("", f.username, f.password))
+	if supportAuth && len(f.Username) > 0 {
+		err := client.Auth(sasl.NewPlainClient("", f.Username, f.Password))
 		if err != nil {
 			return emails, fmt.Errorf("error performing AUTH with remote SMTP service: %s", err)
 		}

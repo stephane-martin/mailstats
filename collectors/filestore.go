@@ -1,4 +1,4 @@
-package main
+package collectors
 
 import (
 	"context"
@@ -6,6 +6,8 @@ import (
 	"github.com/fsnotify/fsnotify"
 	"github.com/inconshreveable/log15"
 	"github.com/oklog/ulid"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"os"
@@ -105,14 +107,14 @@ func (s *FileStore) Close() error {
 	return s.watcher.Close()
 }
 
-func (s *FileStore) New(uid ulid.ULID, obj *IncomingMail) error {
+func (s *FileStore) New(uid ulid.ULID, obj *models.IncomingMail) error {
 	tmppath := filepath.Join(s.tmp, uid.String())
 	dest := filepath.Join(s.new, uid.String())
 	f, err := os.OpenFile(tmppath, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	err = autoclose(f, func() error {
+	err = utils.Autoclose(f, func() error {
 		return msgp.Encode(f, obj)
 	})
 	if err != nil {
@@ -143,7 +145,7 @@ func (s *FileStore) readDirNew() (string, error) {
 	return filepath.Join(s.new, names[0]), nil
 }
 
-func (s *FileStore) Get(stop <-chan struct{}, obj *IncomingMail) error {
+func (s *FileStore) Get(stop <-chan struct{}, obj *models.IncomingMail) error {
 	c := make(chan struct{})
 	var err error
 	go func() {
@@ -158,7 +160,7 @@ func (s *FileStore) Get(stop <-chan struct{}, obj *IncomingMail) error {
 	}
 }
 
-func (s *FileStore) get(stop <-chan struct{}, obj *IncomingMail) error {
+func (s *FileStore) get(stop <-chan struct{}, obj *models.IncomingMail) error {
 	s.lock.Lock()
 	newFile := ""
 	var err error

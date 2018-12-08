@@ -7,32 +7,20 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"errors"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
+	"io"
+	"io/ioutil"
+	"path/filepath"
+
 	"github.com/h2non/filetype/matchers"
 	"github.com/h2non/filetype/types"
 	"github.com/inconshreveable/log15"
 	"github.com/nwaples/rardecode"
 	"github.com/xi2/xz"
-	"io"
-	"io/ioutil"
-	"path/filepath"
 )
 
-type ArchiveFile struct {
-	Name        string `json:"name,omitempty"`
-	Extension   string `json:"extension,omitempty"`
-	Type        string `json:"type,omitempty"`
-	Compression string `json:"compression,omitempty"`
-}
-
-type Archive struct {
-	Files              []*ArchiveFile      `json:"files,omitempty"`
-	DecompressedSize   uint64              `json:"decompressed_size"`
-	ArchiveType        string              `json:"type,omitempty"`
-	SubArchives        map[string]*Archive `json:"sub_archives,omitempty"`
-	ContainsExecutable bool                `json:"contains_exe"`
-}
-
-func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size uint64, logger log15.Logger) (*Archive, error) {
+func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size uint64, logger log15.Logger) (*models.Archive, error) {
 	switch typ {
 	case matchers.TypeZip:
 		return AnalyzeZip(reader, size, logger)
@@ -53,7 +41,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		if err != nil {
 			return oldType, nil, "", err
 		}
-		newt, newr, err := GuessReader(r)
+		newt, newr, err := utils.GuessReader(r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "gzip", nil
@@ -61,7 +49,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		return newt, newr, "gzip", nil
 	case matchers.TypeBz2:
 		r := bzip2.NewReader(oldReader)
-		newt, newr, err := GuessReader(r)
+		newt, newr, err := utils.GuessReader(r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "bzip2", nil
@@ -72,7 +60,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		if err != nil {
 			return oldType, nil, "", err
 		}
-		newt, newr, err := GuessReader(r)
+		newt, newr, err := utils.GuessReader(r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "xz", nil
@@ -83,17 +71,17 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 	}
 }
 
-func AnalyzeZip(reader io.ReaderAt, size uint64, logger log15.Logger) (*Archive, error) {
+func AnalyzeZip(reader io.ReaderAt, size uint64, logger log15.Logger) (*models.Archive, error) {
 	zipReader, err := zip.NewReader(reader, int64(size))
 	if err != nil {
 		return nil, err
 	}
-	archive := new(Archive)
+	archive := new(models.Archive)
 	archive.ArchiveType = "zip"
 
 LoopFiles:
 	for _, f := range zipReader.File {
-		entry := ArchiveFile{Name: f.Name, Extension: filepath.Ext(f.Name)}
+		entry := models.ArchiveFile{Name: f.Name, Extension: filepath.Ext(f.Name)}
 		archive.Files = append(archive.Files, &entry)
 		archive.DecompressedSize += f.UncompressedSize64
 		if f.FileInfo().IsDir() {
@@ -105,7 +93,7 @@ LoopFiles:
 			logger.Warn("Error reading file from ZIP", "error", err)
 			continue LoopFiles
 		}
-		t, newReader, err := GuessReader(fileReader)
+		t, newReader, err := utils.GuessReader(fileReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from ZIP archive", "error", err)
 			_ = fileReader.Close()
@@ -124,7 +112,7 @@ LoopFiles:
 			subArchive, err := AnalyzeTar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[f.Name] = subArchive
 			}
@@ -132,7 +120,7 @@ LoopFiles:
 			subArchive, err := AnalyzeRar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[f.Name] = subArchive
 			}
@@ -142,7 +130,7 @@ LoopFiles:
 				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*Archive)
+						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[f.Name] = subArchive
 				}
@@ -154,12 +142,12 @@ LoopFiles:
 
 }
 
-func AnalyzeRar(reader io.Reader, logger log15.Logger) (*Archive, error) {
+func AnalyzeRar(reader io.Reader, logger log15.Logger) (*models.Archive, error) {
 	rarReader, err := rardecode.NewReader(reader, "")
 	if err != nil {
 		return nil, err
 	}
-	archive := new(Archive)
+	archive := new(models.Archive)
 	archive.ArchiveType = "rar"
 LoopFiles:
 	for {
@@ -170,7 +158,7 @@ LoopFiles:
 		if err != nil {
 			return archive, err
 		}
-		entry := ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
+		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
 		archive.Files = append(archive.Files, &entry)
 		if !header.UnKnownSize {
 			archive.DecompressedSize += uint64(header.UnPackedSize)
@@ -179,7 +167,7 @@ LoopFiles:
 			continue LoopFiles
 		}
 
-		t, newReader, err := GuessReader(rarReader)
+		t, newReader, err := utils.GuessReader(rarReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from RAR archive", "error", err)
 			continue LoopFiles
@@ -195,7 +183,7 @@ LoopFiles:
 			subArchive, err := AnalyzeTar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
 			}
@@ -203,7 +191,7 @@ LoopFiles:
 			subArchive, err := AnalyzeRar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
 			}
@@ -213,7 +201,7 @@ LoopFiles:
 				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*Archive)
+						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[header.Name] = subArchive
 				}
@@ -222,9 +210,9 @@ LoopFiles:
 	}
 }
 
-func AnalyzeTar(reader io.Reader, logger log15.Logger) (*Archive, error) {
+func AnalyzeTar(reader io.Reader, logger log15.Logger) (*models.Archive, error) {
 	tarReader := tar.NewReader(reader)
-	archive := new(Archive)
+	archive := new(models.Archive)
 	archive.ArchiveType = "tar"
 
 LoopFiles:
@@ -236,13 +224,13 @@ LoopFiles:
 		if err != nil {
 			return archive, err
 		}
-		entry := ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
+		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
 		archive.Files = append(archive.Files, &entry)
 		archive.DecompressedSize += uint64(header.Size)
 		if header.Typeflag != tar.TypeReg {
 			continue LoopFiles
 		}
-		t, newReader, err := GuessReader(tarReader)
+		t, newReader, err := utils.GuessReader(tarReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from TAR archive", "error", err)
 			continue LoopFiles
@@ -258,7 +246,7 @@ LoopFiles:
 			subArchive, err := AnalyzeTar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
 			}
@@ -266,7 +254,7 @@ LoopFiles:
 			subArchive, err := AnalyzeRar(newReader, logger)
 			if err == nil {
 				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*Archive)
+					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
 			}
@@ -276,7 +264,7 @@ LoopFiles:
 				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*Archive)
+						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[header.Name] = subArchive
 				}

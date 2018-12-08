@@ -2,6 +2,19 @@
 
 
 [[projects]]
+  digest = "1:8b36a2a5ed2e66e577c35f9b0f770b4653977a025a59088ba4fd2fbbaa948382"
+  name = "github.com/DavidBelicza/TextRank"
+  packages = [
+    ".",
+    "convert",
+    "parse",
+    "rank",
+  ]
+  pruneopts = "UT"
+  revision = "79e14bab980af3a1c9f4f5b73672ae1ef18ab732"
+  version = "v2.1.1"
+
+[[projects]]
   branch = "master"
   digest = "1:582d5bc387c134c6e360604542ac443bf099c87434750077090ab675a20df2da"
   name = "github.com/abadojack/whatlanggo"
@@ -564,6 +577,7 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/DavidBelicza/TextRank",
     "github.com/abadojack/whatlanggo",
     "github.com/awnumar/memguard",
     "github.com/emersion/go-sasl",

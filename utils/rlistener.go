@@ -1,7 +1,8 @@
-package main
+package utils
 
 import (
 	"github.com/inconshreveable/log15"
+	"github.com/stephane-martin/mailstats/metrics"
 	"net"
 )
 
@@ -22,7 +23,7 @@ func (l RListener) Accept() (net.Conn, error) {
 	}
 	h, _, _ := net.SplitHostPort(c.RemoteAddr().String())
 	l.logger.Info("New connection", "client", h, "service", l.stype)
-	M().Connections.WithLabelValues(h, l.stype).Inc()
+	metrics.M().Connections.WithLabelValues(h, l.stype).Inc()
 	return RConn{Conn: c, logger: l.logger, stype: l.stype}, nil
 }
 

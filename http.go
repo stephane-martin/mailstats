@@ -7,6 +7,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/metrics"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"log"
@@ -28,9 +34,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/schollz/pake"
 	"github.com/stephane-martin/mailstats/sbox"
-	"github.com/storozhukBM/verifier"
 	"github.com/uber-go/atomic"
-	"github.com/urfave/cli"
 	"golang.org/x/text/encoding/htmlindex"
 )
 
@@ -153,29 +157,7 @@ func (r *PakeRecipients) Erase(workerID ulid.ULID) {
 	r.m.Delete(workerID)
 }
 
-type HTTPArgs struct {
-	ListenAddr string
-	ListenPort int
-}
 
-func (args HTTPArgs) Verify() error {
-	v := verifier.New()
-	v.That(args.ListenPort > 0, "The HTTP listen port must be positive")
-	v.That(len(args.ListenAddr) > 0, "The HTTP listen address is empty")
-	p := net.ParseIP(args.ListenAddr)
-	v.That(p != nil, "The HTTP listen address is invalid")
-	return v.GetError()
-}
-
-func (args *HTTPArgs) Populate(c *cli.Context) *HTTPArgs {
-	if args == nil {
-		//noinspection GoAssignmentToReceiver
-		args = new(HTTPArgs)
-	}
-	args.ListenPort = c.GlobalInt("http-port")
-	args.ListenAddr = strings.TrimSpace(c.GlobalString("http-addr"))
-	return args
-}
 
 type initRequest struct {
 	Pake string `json:"pake"`
@@ -199,7 +181,7 @@ type byeRequest struct {
 
 type submitRequest struct {
 	RequestID uint64 `json:"request_id"`
-	Features  *FeaturesMail
+	Features  *models.FeaturesMail
 }
 
 func prepare(obj interface{}, c *gin.Context) (ulid.ULID, error) {
@@ -242,7 +224,7 @@ func (w *log15Writer) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
-func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer, collector Collector, consumer Consumer, logger log15.Logger) error {
+func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) error {
 	if args.ListenPort <= 0 {
 		return nil
 	}
@@ -259,7 +241,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 
 	router.Any("/metrics", gin.WrapH(
 		promhttp.HandlerFor(
-			M().Registry,
+			metrics.M().Registry,
 			promhttp.HandlerOpts{
 				DisableCompression:  true,
 				ErrorLog:            adaptPromLogger(logger),
@@ -425,7 +407,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 		})
 
 		router.POST("/worker/submit/:worker", func(c *gin.Context) {
-			var features FeaturesMail
+			var features models.FeaturesMail
 			_, err := prepare(&features, c)
 			if err != nil {
 				logger.Warn("Error decoding worker request", "error", err)
@@ -438,6 +420,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 	}
 
 	router.POST("/messages.mime", func(c *gin.Context) {
+		metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
 		now := time.Now()
 
 		ct := c.ContentType()
@@ -543,10 +526,10 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 			}
 		}
 
-		infos := new(IncomingMail)
+		infos := new(models.IncomingMail)
 		infos.Data = []byte(message)
 		infos.TimeReported = now
-		infos.UID = NewULID()
+		infos.UID = utils.NewULID()
 		if sender != nil {
 			infos.MailFrom = sender.Address
 		}
@@ -581,6 +564,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 	})
 
 	router.POST("/messages", func(c *gin.Context) {
+		metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
 		// cf https://documentation.mailgun.com/en/latest/api-sending
 		now := time.Now()
 		_, params, err := mime.ParseMediaType(c.ContentType())
@@ -703,10 +687,10 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 			c.Status(500)
 			return
 		}
-		infos := new(IncomingMail)
+		infos := new(models.IncomingMail)
 		infos.Data = b.Bytes()
 		infos.TimeReported = now
-		infos.UID = NewULID()
+		infos.UID = utils.NewULID()
 		if len(from) > 0 {
 			infos.MailFrom = from
 		}
@@ -755,6 +739,7 @@ func StartHTTP(ctx context.Context, args HTTPArgs, secret *memguard.LockedBuffer
 	}()
 
 	logger.Info("Starting HTTP service")
+
 	err := svc.ListenAndServe()
 	if err != nil {
 		logger.Info("HTTP service error", "error", err)

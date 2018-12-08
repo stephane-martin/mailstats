@@ -1,10 +1,12 @@
-package main
+package utils
 
 import (
 	"golang.org/x/text/unicode/norm"
 	"io"
 	"io/ioutil"
 	"math/rand"
+	"net"
+	"net/http"
 	"os"
 	"sync"
 	"github.com/oklog/ulid"
@@ -43,7 +45,7 @@ func NewTempFile(content []byte) (*TempFile, error) {
 		return nil, err
 	}
 	t := &TempFile{name: f.Name()}
-	err = autoclose(f, func() error {
+	err = Autoclose(f, func() error {
 		if len(content) == 0 {
 			return nil
 		}
@@ -85,7 +87,7 @@ func (t *TempFile) RemoveAfter(f func(name string) error) (err error) {
 	return f(t.Name())
 }
 
-func normalize(s string) string {
+func Normalize(s string) string {
 	return norm.NFKC.String(s)
 }
 
@@ -93,7 +95,7 @@ func NewULID() ulid.ULID {
 	return <-ulidChan
 }
 
-func autoclose(w io.Closer, f func() error) (err error) {
+func Autoclose(w io.Closer, f func() error) (err error) {
 	defer func() {
 		e := recover()
 		errClose := w.Close()
@@ -128,4 +130,23 @@ type iTimeout interface {
 
 type iTemporary interface {
 	Temporary() bool
+}
+
+func NewHTTPClient() *http.Client {
+	tr := &http.Transport{
+		DisableCompression: true,
+		MaxIdleConns: 16,
+		MaxIdleConnsPerHost: 8,
+		IdleConnTimeout: 30 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 2 * time.Second,
+		Proxy: nil,
+		DialContext: (&net.Dialer{
+			Timeout:   10 * time.Second,
+			KeepAlive: 30 * time.Second,
+			DualStack: true,
+		}).DialContext,
+	}
+	return &http.Client{Transport: tr}
 }

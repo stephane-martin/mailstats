@@ -3,6 +3,12 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"net"
@@ -14,32 +20,14 @@ import (
 	"github.com/emersion/go-smtp"
 
 	"github.com/inconshreveable/log15"
-	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
 )
 
-type SMTPArgs struct {
-	ListenAddr     string
-	ListenPort     int
-	MaxMessageSize int
-	MaxIdle        int
-	Inetd          bool
-}
 
-func (args SMTPArgs) Verify() error {
-	v := verifier.New()
-	v.That(args.ListenPort > 0, "The listen port must be positive")
-	v.That(len(args.ListenAddr) > 0, "The listen address is empty")
-	v.That(args.MaxMessageSize >= 0, "The message size must be positive")
-	v.That(args.MaxIdle >= 0, "The idle time must be positive")
-	p := net.ParseIP(args.ListenAddr)
-	v.That(p != nil, "The listen address is invalid")
-	return v.GetError()
-}
 
 type Backend struct {
-	Collector Collector
+	Collector collectors.Collector
 	Stop      <-chan struct{}
 	Logger    log15.Logger
 }
@@ -63,7 +51,7 @@ func (b *Backend) AnonymousLogin() (smtp.User, error) {
 }
 
 type User struct {
-	Collector Collector
+	Collector collectors.Collector
 	Stop      <-chan struct{}
 	Logger    log15.Logger
 }
@@ -74,12 +62,12 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	infos := new(IncomingMail)
+	infos := new(models.IncomingMail)
 	infos.MailFrom = from
 	infos.RcptTo = to
 	infos.Data = b
 	infos.TimeReported = time.Now()
-	infos.UID = NewULID()
+	infos.UID = utils.NewULID()
 	return u.Collector.Push(u.Stop, infos)
 }
 
@@ -89,21 +77,21 @@ func (u *User) Logout() error {
 }
 
 func SMTP(c *cli.Context) error {
-	args, err := GetArgs(c)
+	args, err := arguments.GetArgs(c)
 	if err != nil {
 		return err
 	}
 	logger := args.Logging.Build()
-	collector, err := NewCollector(args, logger)
+	collector, err := collectors.NewCollector(args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
 
-	forwarder, err := args.Forward.Build(logger)
+	forwarder, err := forwarders.Build(args.Forward, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
 	}
-	consumer, err := MakeConsumer(*args)
+	consumer, err := consumers.MakeConsumer(*args)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
@@ -157,7 +145,7 @@ func SMTP(c *cli.Context) error {
 			return err
 		})
 		logger.Debug("Starting SMTP service as inetd")
-		l := NewStdinListener()
+		l := utils.NewStdinListener()
 		g.Go(func() error {
 			err := s.Serve(l)
 			logger.Debug("Stopped SMTP service as inetd")
@@ -174,7 +162,7 @@ func SMTP(c *cli.Context) error {
 		cancel()
 		return cli.NewExitError(fmt.Sprintf("Listen() has failed: %s", err), 2)
 	}
-	listener = WrapListener(listener, "SMTP", logger)
+	listener = utils.WrapListener(listener, "SMTP", logger)
 
 	g.Go(func() error {
 		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)

@@ -1,8 +1,9 @@
-package main
+package extractors
 
 import (
 	"encoding/json"
 	"github.com/mostlygeek/go-exiftool"
+	"github.com/stephane-martin/mailstats/utils"
 	"os/exec"
 	"runtime"
 )
@@ -37,7 +38,7 @@ func (w *ExifToolWrapper) ExtractFromFile(filename string) (map[string]interface
 }
 
 func (w *ExifToolWrapper) Extract(content []byte) (meta map[string]interface{}, err error) {
-	temp, err := NewTempFile(content)
+	temp, err := utils.NewTempFile(content)
 	if err != nil {
 		return nil, err
 	}

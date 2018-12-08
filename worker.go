@@ -7,6 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -38,7 +41,7 @@ type WorkerClient struct {
 }
 
 func NewWorker(secret *memguard.LockedBuffer, logger log15.Logger) *WorkerClient {
-	return &WorkerClient{HTTP: NewHTTPClient(), secret: secret, uid: NewULID(), logger: logger, requestID: 0}
+	return &WorkerClient{HTTP: utils.NewHTTPClient(), secret: secret, uid: utils.NewULID(), logger: logger, requestID: 0}
 }
 
 func (w *WorkerClient) ping(ctx context.Context) bool {
@@ -60,7 +63,7 @@ func (w *WorkerClient) ping(ctx context.Context) bool {
 	return true
 }
 
-func (w *WorkerClient) submit(ctx context.Context, features *FeaturesMail) error {
+func (w *WorkerClient) submit(ctx context.Context, features *models.FeaturesMail) error {
 	body, err := json.Marshal(features)
 	if err != nil {
 		return err
@@ -93,7 +96,7 @@ func (w *WorkerClient) submit(ctx context.Context, features *FeaturesMail) error
 	return nil
 }
 
-func (w *WorkerClient) getWork(ctx context.Context) (*IncomingMail, error) {
+func (w *WorkerClient) getWork(ctx context.Context) (*models.IncomingMail, error) {
 	resp, err := w.doRequest(ctx, "work")
 	if err != nil {
 		return nil, err
@@ -107,7 +110,7 @@ func (w *WorkerClient) getWork(ctx context.Context) (*IncomingMail, error) {
 	if err != nil {
 		return nil, err
 	}
-	var m IncomingMail
+	var m models.IncomingMail
 	_, err = m.UnmarshalMsg(dec)
 	if err != nil {
 		return nil, err
@@ -127,7 +130,7 @@ func (w *WorkerClient) bye() error {
 	return nil
 }
 
-func (w *WorkerClient) doRequest(ctx context.Context, kind string, features ...*FeaturesMail) (*http.Response, error) {
+func (w *WorkerClient) doRequest(ctx context.Context, kind string, features ...*models.FeaturesMail) (*http.Response, error) {
 	w.requestID += 1
 
 	var req interface{}
@@ -246,7 +249,7 @@ func (w *WorkerClient) Auth(ctx context.Context) error {
 }
 
 func Worker(c *cli.Context) error {
-	var logArgs LoggingArgs
+	var logArgs arguments.LoggingArgs
 	logArgs.Populate(c)
 	err := logArgs.Verify()
 	if err != nil {
@@ -289,7 +292,7 @@ W:
 			break W
 		}
 
-		if strings.Contains(err.Error(), "connection refused") || IsTemp(err) || IsTimeout(err) || err == io.EOF {
+		if strings.Contains(err.Error(), "connection refused") || utils.IsTemp(err) || utils.IsTimeout(err) || err == io.EOF {
 			select {
 			case <-gctx.Done():
 				break W
@@ -299,7 +302,7 @@ W:
 		}
 		if e, ok := err.(*url.Error); ok {
 			logger.Info("URL error", "op", e.Op, "url", e.URL, "error", e.Err)
-			if e.Err == io.EOF || IsTemp(e.Err) || IsTimeout(e.Err) {
+			if e.Err == io.EOF || utils.IsTemp(e.Err) || utils.IsTimeout(e.Err) {
 				select {
 				case <-gctx.Done():
 					break W
@@ -348,7 +351,7 @@ Ping:
 
 	parser := NewParser(logger)
 
-	ch := make(chan *IncomingMail)
+	ch := make(chan *models.IncomingMail)
 
 	g.Go(func() error {
 		defer close(ch)
@@ -367,7 +370,7 @@ Ping:
 					}
 				}
 				logger.Info("Error getting work", "error", err)
-				if !IsTimeout(err) && !IsTemp(err) {
+				if !utils.IsTimeout(err) && !utils.IsTemp(err) {
 					return err
 				}
 				time.Sleep(time.Second)
@@ -395,7 +398,7 @@ Ping:
 							}
 						}
 						logger.Warn("Failed to upload results", "error", err)
-						if !IsTemp(err) && !IsTimeout(err) {
+						if !utils.IsTemp(err) && !utils.IsTimeout(err) {
 							return err
 						}
 						time.Sleep(time.Second)

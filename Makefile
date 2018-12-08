@@ -25,10 +25,10 @@ clean:
 version:
 	echo ${VERSION}
 
-${BINARY}_debug: bindata.go incoming_gen.go ${SOURCES}
+${BINARY}_debug: bindata.go models/incoming_gen.go ${SOURCES}
 	go build -x -tags 'netgo osusergo' -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
-${BINARY}: bindata.go incoming_gen.go ${SOURCES}
+${BINARY}: bindata.go models/incoming_gen.go ${SOURCES}
 	go build -a -installsuffix nocgo -tags 'netgo osusergo' -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
 tools:
@@ -38,5 +38,5 @@ tools:
 bindata.go: ${DATAFILES}
 	go-bindata data/
 
-incoming_gen.go: incoming.go
-	msgp -file incoming.go
+models/incoming_gen.go: models/incoming.go
+	msgp -file models/incoming.go
