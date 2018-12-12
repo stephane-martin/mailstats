@@ -1,6 +1,6 @@
 .POSIX:
 .SUFFIXES:
-.PHONY: debug release vet clean version
+.PHONY: debug release vet clean version staticcheck revive
 .SILENT: version
 
 SOURCES = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
@@ -18,6 +18,13 @@ release: ${BINARY}
 vet:
 	go vet ./...
 
+staticcheck:
+	./retool do staticcheck ./...
+
+revive:
+	./retool do revive -formatter stylish -exclude vendor/... ./...
+
+
 clean:
 	rm -f mailstats mailstats_debug
 
@@ -25,9 +32,11 @@ version:
 	echo ${VERSION}
 
 ${BINARY}_debug: extractors/bindata.go models/incoming_gen.go ${SOURCES}
+	dep ensure
 	go build -x -tags 'netgo osusergo' -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
 ${BINARY}: extractors/bindata.go models/incoming_gen.go ${SOURCES}
+	dep ensure
 	go build -a -installsuffix nocgo -tags 'netgo osusergo' -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
 retool:
