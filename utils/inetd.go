@@ -43,9 +43,8 @@ func (l *StdinListener) Accept() (net.Conn, error) {
 	conn, ok := <-l.connChan
 	if ok {
 		return conn, nil
-	} else {
-		return nil, errors.New("Closed")
 	}
+	return nil, errors.New("Closed")
 }
 
 func (l *StdinListener) Close() error {
