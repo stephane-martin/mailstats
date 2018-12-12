@@ -130,6 +130,10 @@
     name = "github.com/blabber/mbox"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/rafaeljesus/rabbus"
+    version = "2.2.1"
+
 [prune]
 	go-tests = true
 	unused-packages = true

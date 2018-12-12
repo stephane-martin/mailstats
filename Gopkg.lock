@@ -386,6 +386,25 @@
   revision = "185b4288413d2a0dd0806f78c90dde719829e5ae"
 
 [[projects]]
+  digest = "1:9c503b940e8ed53089884e7075f98a3de403e7a72313eb81262b0c11b0026513"
+  name = "github.com/rafaeljesus/rabbus"
+  packages = [
+    ".",
+    "internal/amqp",
+  ]
+  pruneopts = "UT"
+  revision = "f0fbeaa2171274f03ddda6bd13b9a9c79d4863ba"
+  version = "v2.2.1"
+
+[[projects]]
+  branch = "master"
+  digest = "1:e65b85a32c2aaf1fefbc03721573929fe08cfc0198f63167b56aaa19c27a1fb1"
+  name = "github.com/rafaeljesus/retry-go"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "5981a380a87925ee03a78a7ff13574fabc804837"
+
+[[projects]]
   digest = "1:a79502742652bac9b1772edacd2a1555a2afaf6299d5574f898a05c31eb590c6"
   name = "github.com/schollz/pake"
   packages = ["."]
@@ -394,12 +413,28 @@
   version = "v1.1.0"
 
 [[projects]]
+  digest = "1:f7805d1cc7776d00da2aa3dbacf85927e58e6dad630ba9f3ea5b92d719f96269"
+  name = "github.com/sony/gobreaker"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e9556a45379ef1da12e54847edb2fb3d7d566f36"
+  version = "0.3.0"
+
+[[projects]]
   branch = "master"
   digest = "1:7e2fd0a8b4a6c06c36dedeefe825e05a2548e835f614e4a3b4dae8eaef7192c9"
   name = "github.com/storozhukBM/verifier"
   packages = ["."]
   pruneopts = "UT"
   revision = "694d046345c0bd70098b213be5f8e0fa19f9d402"
+
+[[projects]]
+  branch = "master"
+  digest = "1:525ac3364813b4688df380594e562133e07830dfce0722effda64b37634c13d0"
+  name = "github.com/streadway/amqp"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "a314942b2fd9dde7a3f70ba3f1062848ce6eb392"
 
 [[projects]]
   branch = "master"
@@ -613,6 +648,7 @@
     "github.com/pkg/errors",
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
+    "github.com/rafaeljesus/rabbus",
     "github.com/schollz/pake",
     "github.com/storozhukBM/verifier",
     "github.com/tinylib/msgp/msgp",

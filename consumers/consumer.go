@@ -25,6 +25,8 @@ func MakeConsumer(args arguments.Args) (Consumer, error) {
 		return NewRedisConsumer(args.Redis)
 	case arguments.HTTP:
 		return NewHTTPConsumer(args.Consumer)
+	case arguments.Rabbit:
+		return NewRabbitConsumer(args.Rabbit)
 	default:
 		return nil, errors.New("unknown consumer type")
 	}

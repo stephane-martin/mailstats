@@ -7,6 +7,7 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"net/http"
+	"time"
 )
 
 type HTTPConsumer struct {
@@ -16,7 +17,7 @@ type HTTPConsumer struct {
 
 func NewHTTPConsumer(args arguments.ConsumerArgs) (Consumer, error) {
 	return &HTTPConsumer{
-		client: utils.NewHTTPClient(),
+		client: utils.NewHTTPClient(10*time.Second),
 		url: args.GetURL(),
 	}, nil
 }
