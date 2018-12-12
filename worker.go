@@ -7,9 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -20,6 +17,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 
 	"github.com/awnumar/memguard"
 	"github.com/inconshreveable/log15"
@@ -41,7 +42,7 @@ type WorkerClient struct {
 }
 
 func NewWorker(secret *memguard.LockedBuffer, logger log15.Logger) *WorkerClient {
-	return &WorkerClient{HTTP: utils.NewHTTPClient(), secret: secret, uid: utils.NewULID(), logger: logger, requestID: 0}
+	return &WorkerClient{HTTP: utils.NewHTTPClient(time.Minute), secret: secret, uid: utils.NewULID(), logger: logger, requestID: 0}
 }
 
 func (w *WorkerClient) ping(ctx context.Context) bool {
@@ -106,6 +107,9 @@ func (w *WorkerClient) getWork(ctx context.Context) (*models.IncomingMail, error
 		return nil, errors.New("wrong response status code")
 	}
 	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
 	dec, err := sbox.Decrypt(body, w.sessionKey)
 	if err != nil {
 		return nil, err
@@ -130,8 +134,29 @@ func (w *WorkerClient) bye() error {
 	return nil
 }
 
+func (w *WorkerClient) ACK(ctx context.Context, uid ulid.ULID) error {
+	u := fmt.Sprintf("http://127.0.0.1:8080/worker/ack/%s", w.uid.String())
+	req := &ackRequest{UID: uid.String()}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	enc, err := sbox.Encrypt(body, w.sessionKey)
+	if err != nil {
+		return err
+	}
+	httpreq, err := http.NewRequest("POST", u, bytes.NewReader(enc))
+	if err != nil {
+		return err
+	}
+	httpreq.Header.Set("Content-Type", "application/octet-stream")
+	httpreq = httpreq.WithContext(ctx)
+	_, err = w.HTTP.Do(httpreq)
+	return err
+}
+
 func (w *WorkerClient) doRequest(ctx context.Context, kind string, features ...*models.FeaturesMail) (*http.Response, error) {
-	w.requestID += 1
+	w.requestID++
 
 	var req interface{}
 	var u string
@@ -381,14 +406,17 @@ Ping:
 	for i := 0; i < nbParsers; i++ {
 		g.Go(func() error {
 			for m := range ch {
-				features, err := parser.Parse(m)
-				if err != nil {
-					logger.Info("Failed to parse message", "error", err)
-					continue
-				}
+				features, parseErr := parser.Parse(m)
+
 				g.Go(func() error {
 					for {
-						err := worker.submit(ctx, features)
+						var err error
+						if parseErr != nil {
+							logger.Info("Worker failed to parse message", "error", parseErr)
+							err = worker.ACK(ctx, m.UID)
+						} else {
+							err = worker.submit(ctx, features)
+						}
 						if err == nil || err == context.Canceled {
 							return err
 						}

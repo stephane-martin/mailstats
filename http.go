@@ -7,12 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/metrics"
-	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"log"
@@ -24,6 +18,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/metrics"
+	"github.com/stephane-martin/mailstats/models"
 
 	"github.com/awnumar/memguard"
 	"github.com/gin-gonic/gin"
@@ -157,8 +157,6 @@ func (r *PakeRecipients) Erase(workerID ulid.ULID) {
 	r.m.Delete(workerID)
 }
 
-
-
 type initRequest struct {
 	Pake string `json:"pake"`
 }
@@ -179,9 +177,8 @@ type byeRequest struct {
 	RequestID uint64 `json:"request_id"`
 }
 
-type submitRequest struct {
-	RequestID uint64 `json:"request_id"`
-	Features  *models.FeaturesMail
+type ackRequest struct {
+	UID string `json:"uid"`
 }
 
 func prepare(obj interface{}, c *gin.Context) (ulid.ULID, error) {
@@ -407,15 +404,34 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 		})
 
 		router.POST("/worker/submit/:worker", func(c *gin.Context) {
-			var features models.FeaturesMail
-			_, err := prepare(&features, c)
+			features := new(models.FeaturesMail)
+			_, err := prepare(features, c)
 			if err != nil {
 				logger.Warn("Error decoding worker request", "error", err)
 				return
 			}
+			collector.ACK(ulid.MustParse(features.UID))
 			go func() {
-				consumer.Consume(&features)
+				err := consumer.Consume(features)
+				if err != nil {
+					logger.Warn("Failed to consume parsing results", "error", err)
+				} else {
+					logger.Debug("Parsing results sent to consumer")
+				}
 			}()
+		})
+
+		router.POST("/worker/ack/:worker", func(c *gin.Context) {
+			var obj ackRequest
+			_, err := prepare(&obj, c)
+			if err != nil {
+				logger.Warn("Error decoding ACK request", "error", err)
+				return
+			}
+			uid, err := ulid.Parse(obj.UID)
+			if err == nil {
+				collector.ACK(uid)
+			}
 		})
 	}
 
@@ -526,19 +542,21 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			}
 		}
 
-		infos := new(models.IncomingMail)
-		infos.Data = []byte(message)
-		infos.TimeReported = now
-		infos.UID = utils.NewULID()
+		infos := &models.IncomingMail{
+			BaseInfos: models.BaseInfos{
+				TimeReported: now,
+				Addr:         c.ClientIP(),
+				Family:       "http",
+				Port:         args.ListenPort,
+			},
+			Data: []byte(message),
+		}
 		if sender != nil {
 			infos.MailFrom = sender.Address
 		}
 		for _, recipient := range recipients {
 			infos.RcptTo = append(infos.RcptTo, recipient.Address)
 		}
-		infos.Addr = c.ClientIP()
-		infos.Family = "http"
-		infos.Port = args.ListenPort
 		err = collector.PushCtx(ctx, infos)
 		if err != nil {
 			logger.Error("Error pushing HTTP message to collector", "error", err)
@@ -568,6 +586,11 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 		// cf https://documentation.mailgun.com/en/latest/api-sending
 		now := time.Now()
 		_, params, err := mime.ParseMediaType(c.ContentType())
+		if err != nil {
+			logger.Warn("Error parsing media type", "error", err)
+			c.Status(400)
+			return
+		}
 		charset := strings.TrimSpace(params["charset"])
 		if charset == "" {
 			charset = "utf-8"
@@ -687,19 +710,21 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			c.Status(500)
 			return
 		}
-		infos := new(models.IncomingMail)
-		infos.Data = b.Bytes()
-		infos.TimeReported = now
-		infos.UID = utils.NewULID()
+		infos := &models.IncomingMail{
+			BaseInfos: models.BaseInfos{
+				TimeReported: now,
+				Addr:         c.ClientIP(),
+				Family:       "http",
+				Port:         args.ListenPort,
+			},
+			Data: b.Bytes(),
+		}
 		if len(from) > 0 {
 			infos.MailFrom = from
 		}
 		for _, addr := range to {
 			infos.RcptTo = append(infos.RcptTo, addr.Address)
 		}
-		infos.Addr = c.ClientIP()
-		infos.Family = "http"
-		infos.Port = args.ListenPort
 		err = collector.PushCtx(ctx, infos)
 		if err != nil {
 			logger.Error("Error pushing HTTP message to collector", "error", err)
