@@ -341,7 +341,7 @@
   version = "v0.8.0"
 
 [[projects]]
-  digest = "1:26663fafdea73a38075b07e8e9d82fc0056379d2be8bb4e13899e8fda7c7dd23"
+  digest = "1:93a746f1060a8acbcf69344862b2ceced80f854170e1caae089b2834c5fbf7f4"
   name = "github.com/prometheus/client_golang"
   packages = [
     "prometheus",
@@ -349,8 +349,8 @@
     "prometheus/promhttp",
   ]
   pruneopts = "UT"
-  revision = "abad2d1bd44235a26707c172eab6bca5bf2dbad3"
-  version = "v0.9.1"
+  revision = "505eaef017263e299324067d40ca2c48f6a2cf50"
+  version = "v0.9.2"
 
 [[projects]]
   branch = "master"
@@ -370,11 +370,11 @@
     "model",
   ]
   pruneopts = "UT"
-  revision = "aeab699e26f4d4089dba5e522e5d9babd2adbaf7"
+  revision = "4724e9255275ce38f7179b2478abeae4e28c904f"
 
 [[projects]]
   branch = "master"
-  digest = "1:ef74914912f99c79434d9c09658274678bc85080ebe3ab32bec3940ebce5e1fc"
+  digest = "1:d39e7c7677b161c2dd4c635a2ac196460608c7d8ba5337cc8cae5825a2681f8f"
   name = "github.com/prometheus/procfs"
   packages = [
     ".",
@@ -383,7 +383,7 @@
     "xfs",
   ]
   pruneopts = "UT"
-  revision = "185b4288413d2a0dd0806f78c90dde719829e5ae"
+  revision = "1dc9a6cbc91aacc3e8b2d63db4d2e957a5394ac4"
 
 [[projects]]
   digest = "1:9c503b940e8ed53089884e7075f98a3de403e7a72313eb81262b0c11b0026513"
@@ -508,7 +508,7 @@
     "html/atom",
   ]
   pruneopts = "UT"
-  revision = "adae6a3d119ae4890b46832a2e88a95adc62b8e7"
+  revision = "610586996380ceef02dd726cc09df7e00a3f8e56"
 
 [[projects]]
   branch = "master"
@@ -520,14 +520,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:f343f077a5b0bc3a3788b3a04e24dd417e3e25b2acb529c413e212d2c42416ef"
+  digest = "1:206c5fc6c77857fea5eebcf4ceb2db7272f269428456160589910e50d14244db"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "0cf1ed9e522b7dbb416f080a5c8003de9b702bf4"
+  revision = "b05ddf57801d2239d6ab0ee35f9d981e0420f4ac"
 
 [[projects]]
   branch = "master"
@@ -558,11 +558,11 @@
     "unicode/norm",
   ]
   pruneopts = "UT"
-  revision = "6f44c5a2ea40ee3593d98cdcc905cc1fdaa660e2"
+  revision = "17bcc049122f272a32787ba38073ee47433023e9"
 
 [[projects]]
   branch = "master"
-  digest = "1:b8cfecc96c8118876e0c7962a265f8c1e672a98c1837fdb8a1490caebf195be9"
+  digest = "1:1d2a5a8d93aee5ab429fa4176de5e8c84b96862cca1bb4feb0513cdf34889d90"
   name = "gonum.org/v1/gonum"
   packages = [
     "blas",
@@ -579,7 +579,7 @@
     "mat",
   ]
   pruneopts = "UT"
-  revision = "d752f8fef7d8a1395483533e88a193258eade182"
+  revision = "c64a0a7fc77c800bc460f7214f5953b2e55a7b51"
 
 [[projects]]
   branch = "v3"

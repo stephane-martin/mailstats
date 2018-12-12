@@ -3,10 +3,10 @@ package consumers
 import (
 	"context"
 	"encoding/json"
+	"github.com/inconshreveable/log15"
 	"github.com/rafaeljesus/rabbus"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
-	"golang.org/x/sync/errgroup"
 	"time"
 )
 
@@ -16,49 +16,40 @@ type RabbitConsumer struct {
 	routingKey string
 	exchange string
 	exchangeType string
+	logger log15.Logger
 }
 
-func NewRabbitConsumer(args arguments.RabbitArgs) (Consumer, error) {
+func NewRabbitConsumer(args arguments.RabbitArgs, logger log15.Logger) (Consumer, error) {
 	c := &RabbitConsumer{
 		routingKey: args.ResultsRoutingKey,
 		exchange: args.ResultsExchange,
 		exchangeType: args.ResultsExchangeType,
+		logger: logger,
 	}
-	cbStateChangeFunc := func(name, from, to string) {
+	publisherChangeFunc := func(name, from, to string) {
+		logger.Info("RabbitMQ consumer state change", "name", name, "from", from, "to", to)
+	}
 
-	}
 	publisher, err := rabbus.New(
 		args.URI,
 		rabbus.Durable(true),
 		rabbus.Attempts(5),
 		rabbus.Sleep(time.Second*2),
 		rabbus.Threshold(3),
-		rabbus.OnStateChange(cbStateChangeFunc),
+		rabbus.OnStateChange(publisherChangeFunc),
 	)
 	if err != nil {
 		return nil, err
 	}
 	c.publisher = publisher
 
-	gctx, cancel := context.WithCancel(context.Background())
-	c.cancel = cancel
-	g, ctx := errgroup.WithContext(gctx)
+	var ctx context.Context
+	ctx, c.cancel = context.WithCancel(context.Background())
 
-	g.Go(func() error {
-		for range c.publisher.EmitErr() {
-		}
-		return nil
-	})
-	g.Go(func() error {
-		for range c.publisher.EmitOk() {
-		}
-		return nil
-	})
-
-	g.Go(func() error {
-		_= c.publisher.Run(ctx)
-		return c.publisher.Close()
-	})
+	go func() {
+		_ = c.publisher.Run(ctx)
+		_ = c.publisher.Close()
+	}()
 
 	return c, nil
 
@@ -69,6 +60,7 @@ func (c *RabbitConsumer) Consume(features *models.FeaturesMail) error {
 	if err != nil {
 		return err
 	}
+
 	msg := rabbus.Message{
 		Exchange:     c.exchange,
 		Key:          c.routingKey,
@@ -77,8 +69,14 @@ func (c *RabbitConsumer) Consume(features *models.FeaturesMail) error {
 		DeliveryMode: rabbus.Persistent,
 		ContentType:  rabbus.ContentTypeJSON,
 	}
+
 	c.publisher.EmitAsync() <- msg
-	return nil
+	select {
+	case <-c.publisher.EmitOk():
+		return nil
+	case err := <-c.publisher.EmitErr():
+		return err
+	}
 }
 
 func (c *RabbitConsumer) Close() error {

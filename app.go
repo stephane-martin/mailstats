@@ -1,7 +1,6 @@
 package main
 
 import (
-	"crypto/elliptic"
 	"encoding/json"
 	"fmt"
 	"github.com/stephane-martin/mailstats/extractors"
@@ -12,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/schollz/pake"
 	"github.com/urfave/cli"
 )
 
@@ -169,45 +167,6 @@ func MakeApp() *cli.App {
 			Name:   "worker",
 			Usage:  "start worker",
 			Action: Worker,
-		},
-		{
-			Name:  "testauth",
-			Usage: "blah",
-			Action: func(c *cli.Context) error {
-				check := func(e error) {
-					if e != nil {
-						panic(e)
-					}
-				}
-				// pick an elliptic curve
-				curve := elliptic.P521()
-				// both parties should have a weak key
-				//pw := []byte("zogzog")
-				pw := []byte{1, 2, 3}
-
-				// initialize sender P ("0" indicates sender)
-				P, err := pake.Init(pw, 0, curve)
-				check(err)
-
-				// initialize recipient Q ("1" indicates recipient)
-				Q, err := pake.Init(pw, 1, curve)
-				check(err)
-
-				// first, P sends u to Q
-				err = Q.Update(P.Bytes())
-				check(err) // errors will occur when any part of the process fails
-
-				// Q computes k, sends H(k), v back to P
-				err = P.Update(Q.Bytes())
-				check(err)
-
-				// P computes k, H(k), sends H(k) to Q
-				err = Q.Update(P.Bytes())
-				check(err)
-
-				return nil
-
-			},
 		},
 		{
 			Name:   "milter",

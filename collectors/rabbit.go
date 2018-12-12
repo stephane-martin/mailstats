@@ -28,7 +28,7 @@ type RabbitCollector struct {
 
 func NewRabbitCollector(args arguments.RabbitArgs, logger log15.Logger) (*RabbitCollector, error) {
 	cbStateChangeFunc := func(name, from, to string) {
-		// TODO: do something when state is changed
+		logger.Info("RabbitMQ collector state change", "name", name, "from", from, "to", to)
 	}
 	publisher, err := rabbus.New(
 		args.URI,

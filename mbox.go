@@ -35,7 +35,7 @@ func MBoxAction(c *cli.Context) error {
 
 	forwarder := forwarders.DummyForwarder{}
 
-	consumer, err := consumers.MakeConsumer(*args)
+	consumer, err := consumers.MakeConsumer(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
