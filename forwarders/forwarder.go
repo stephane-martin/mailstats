@@ -4,16 +4,16 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
+	"sync"
+	"time"
+
 	"github.com/emersion/go-sasl"
 	"github.com/emersion/go-smtp"
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
-	"net"
-	"sync"
-	"time"
 )
-
 
 func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
 	scheme, host, port, username, password := args.Parsed()
@@ -21,32 +21,23 @@ func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
 		logger.Info("No forwarding")
 		return DummyForwarder{}, nil
 	}
-	var f SMTPForwarder
 	mailsChan := make(chan models.IncomingMail, 10000)
+	f := &SMTPForwarder{
+		Scheme: scheme,
+		Host:   host,
+		Port:   port,
+		Logger: logger,
+		Mails:  mailsChan,
+	}
 	if len(username) == 0 || len(password) == 0 {
 		logger.Info("Forwarding without auth", "scheme", scheme, "host", host, "port", port)
-		f = SMTPForwarder{
-			Scheme: scheme,
-			Host:   host,
-			Port:   port,
-			Logger: logger,
-			Mails:  mailsChan,
-		}
 	} else {
 		logger.Info("Forwarding", "scheme", scheme, "host", host, "port", port, "username", username)
-		f = SMTPForwarder{
-			Scheme:   scheme,
-			Host:     host,
-			Port:     port,
-			Username: username,
-			Password: password,
-			Logger:   logger,
-			Mails:    mailsChan,
-		}
+		f.Username = username
+		f.Password = password
 	}
 	return f, nil
 }
-
 
 func chan2buffer(c chan models.IncomingMail) (buffer []models.IncomingMail, stop bool) {
 	for {
@@ -98,16 +89,16 @@ type SMTPForwarder struct {
 	CloseOnce sync.Once
 }
 
-func (f SMTPForwarder) GetLogger() log15.Logger {
+func (f *SMTPForwarder) GetLogger() log15.Logger {
 	return f.Logger
 }
 
-func (f SMTPForwarder) Close() error {
+func (f *SMTPForwarder) Close() error {
 	close(f.Mails)
 	return nil
 }
 
-func (f SMTPForwarder) Start(ctx context.Context) error {
+func (f *SMTPForwarder) Start(ctx context.Context) error {
 	var stop bool
 	var rest []models.IncomingMail
 	var err error
@@ -141,7 +132,7 @@ func (f SMTPForwarder) Start(ctx context.Context) error {
 	}
 }
 
-func (f SMTPForwarder) Push(email models.IncomingMail) {
+func (f *SMTPForwarder) Push(email models.IncomingMail) {
 	f.Mails <- email
 }
 
@@ -172,7 +163,7 @@ func _forward(email models.IncomingMail, client *smtp.Client) (err error) {
 	return nil
 }
 
-func (f SMTPForwarder) forward(emails []models.IncomingMail) (rest []models.IncomingMail, err error) {
+func (f *SMTPForwarder) forward(emails []models.IncomingMail) (rest []models.IncomingMail, err error) {
 	if len(emails) == 0 {
 		return nil, nil
 	}
