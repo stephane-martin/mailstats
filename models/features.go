@@ -31,13 +31,15 @@ type Attachment struct {
 	Size         uint64   `json:"size"`
 	Hash         string   `json:"hash,omitempty"`
 	PDFMetadata  *PDFMeta `json:"pdf_metadata,omitempty"`
+	DocMetadata  *DocMeta `json:"doc_metadata,omitempty"`
+
 	// TODO: ImageMetadata should be more defined
 	ImageMetadata map[string]interface{} `json:"image_metadata,omitempty"`
-	// TODO: office document meta
+
 	Archives      map[string]*Archive `json:"archive_content,omitempty"`
 	SubAttachment *Attachment         `json:"sub_attachment,omitempty"`
 	// TODO
-	Executable bool `json:"executable"`
+	Executable bool `json:"is_executable"`
 }
 
 type Address struct {
@@ -62,6 +64,13 @@ type PDFMeta struct {
 	FileSize       int        `json:"file_size"`
 	Optimized      bool       `json:"optimized"`
 	Version        string     `json:"version,omitempty"`
+}
+
+type DocMeta struct {
+	HasMacro   bool                   `json:"has_macro"`
+	Language   string                 `json:"language"`
+	Keywords   []string               `json:"keywords"`
+	Properties map[string]interface{} `json:"properties"`
 }
 
 type ArchiveFile struct {
