@@ -43,21 +43,22 @@ func (m *milterMessage) Reset() {
 	m.helo = ""
 	m.from = ""
 	m.to = make([]string, 0)
-	m.builder.Reset()
+	m.builder = bytes.Buffer{}
 }
 
 func (m *milterMessage) make() *models.IncomingMail {
-	info := new(models.IncomingMail)
-	info.Host = m.host
-	info.Family = m.family
-	info.Port = m.port
-	info.Addr = m.addr
-	info.Helo = m.helo
-	info.MailFrom = m.from
-	info.RcptTo = append(info.RcptTo, m.to...)
-	info.Data = m.builder.Bytes()
-	info.TimeReported = time.Now()
-	info.UID = utils.NewULID()
+	info := &models.IncomingMail{
+		BaseInfos: models.BaseInfos{
+			Host: m.host,
+			Family: m.family,
+			Port: m.port,
+			Addr: m.addr,
+			MailFrom: m.from,
+			RcptTo: m.to,
+			TimeReported: time.Now(),
+		},
+		Data: m.builder.Bytes(),
+	}
 	m.Reset()
 	return info
 }
@@ -162,10 +163,14 @@ func Milter(c *cli.Context) error {
 	}()
 
 	parser := NewParser(logger)
-	collector, err := collectors.NewCollector(args, logger)
+	collector, err := collectors.NewCollector(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
+	var collG errgroup.Group
+	collG.Go(func() error {
+		return collector.Start()
+	})
 
 	g, ctx := errgroup.WithContext(gctx)
 
@@ -197,10 +202,11 @@ func Milter(c *cli.Context) error {
 	})
 
 	err = g.Wait()
+	_ = collector.Close()
 	_ = parser.Close()
 	_ = forwarder.Close()
 	_ = consumer.Close()
-	_ = collector.Close()
+	_ = collG.Wait()
 	if err != nil {
 		logger.Debug("Milter error after Wait()", "error", err)
 	}

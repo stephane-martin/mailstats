@@ -4,21 +4,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/blabber/mbox"
-	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/forwarders"
-	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
-	"github.com/urfave/cli"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/blabber/mbox"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/urfave/cli"
+	"golang.org/x/sync/errgroup"
 )
 
 func MBoxAction(c *cli.Context) error {
@@ -28,7 +28,7 @@ func MBoxAction(c *cli.Context) error {
 	}
 	logger := args.Logging.Build()
 
-	collector, err := collectors.NewChanCollector(args.CollectorSize, logger)
+	collector, err := collectors.NewChanCollector(args.Collector.CollectorSize, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
@@ -69,12 +69,13 @@ func MBoxAction(c *cli.Context) error {
 	if err != nil {
 		return cli.NewExitError(err.Error(), 1)
 	}
+	//noinspection GoUnhandledErrorResult
 	defer f.Close()
 	scanner := mbox.NewScanner(f)
 
 	g.Go(func() error {
 		defer func() {
-			collector.Close()
+			_ = collector.Close()
 		}()
 		for scanner.Next() {
 			msg := scanner.Message()
@@ -93,11 +94,13 @@ func MBoxAction(c *cli.Context) error {
 				logger.Warn("Error reading mail from mbox", "error", err)
 				continue
 			}
-			incoming := new(models.IncomingMail)
-			incoming.UID = utils.NewULID()
-			incoming.Family = "mbox"
-			incoming.Data = data.Bytes()
-			incoming.TimeReported = time.Now()
+			incoming := &models.IncomingMail{
+				BaseInfos: models.BaseInfos{
+					Family:       "mbox",
+					TimeReported: time.Now(),
+				},
+				Data: data.Bytes(),
+			}
 			err = collector.PushCtx(ctx, incoming)
 			if err != nil {
 				return err
@@ -107,9 +110,8 @@ func MBoxAction(c *cli.Context) error {
 		if err != nil {
 			logger.Warn("Error parsing mail from mbox", "error", err)
 			return err
-		} else {
-			logger.Info("No more messages")
 		}
+		logger.Info("No more messages")
 		return nil
 	})
 

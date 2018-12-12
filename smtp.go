@@ -62,13 +62,16 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	infos := new(models.IncomingMail)
-	infos.MailFrom = from
-	infos.RcptTo = to
-	infos.Data = b
-	infos.TimeReported = time.Now()
-	infos.UID = utils.NewULID()
-	return u.Collector.Push(u.Stop, infos)
+	m := &models.IncomingMail{
+		BaseInfos: models.BaseInfos{
+			MailFrom: from,
+			RcptTo: to,
+			TimeReported: time.Now(),
+		},
+		Data: b,
+	}
+	// TODO: m.Port = ...
+	return u.Collector.Push(u.Stop, m)
 }
 
 func (u *User) Logout() error {
@@ -82,7 +85,7 @@ func SMTP(c *cli.Context) error {
 		return err
 	}
 	logger := args.Logging.Build()
-	collector, err := collectors.NewCollector(args, logger)
+	collector, err := collectors.NewCollector(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
@@ -119,6 +122,11 @@ func SMTP(c *cli.Context) error {
 	s.AllowInsecureAuth = true
 
 	parser := NewParser(logger)
+
+	var collG errgroup.Group
+	collG.Go(func() error {
+		return collector.Start()
+	})
 
 	g.Go(func() error {
 		err := forwarder.Start(ctx)
@@ -184,9 +192,13 @@ func SMTP(c *cli.Context) error {
 	})
 
 	err = g.Wait()
+	_ = collector.Close()
 	_ = parser.Close()
 	_ = forwarder.Close()
 	_ = consumer.Close()
-	_ = collector.Close()
-	return err
+	_ = collG.Wait()
+	if err != nil {
+		logger.Debug("SMTP error after Wait()", "error", err)
+	}
+	return nil
 }
