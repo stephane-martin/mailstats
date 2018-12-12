@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/utils"
 	"io/ioutil"
 	"net/http"
 	"os"
@@ -15,6 +16,10 @@ import (
 	"github.com/urfave/cli"
 )
 
+func ijson(obj interface{}) string {
+	b, _ := json.MarshalIndent(obj, "", "  ")
+	return string(b)
+}
 
 func MakeApp() *cli.App {
 	app := cli.NewApp()
@@ -52,7 +57,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "out,o",
 			Value:  "stdout",
-			Usage:  "where to write the results [stdout, stderr, file, redis, syslog]",
+			Usage:  "where to write the results [stdout, stderr, file, redis, syslog, rabbitmq]",
 			EnvVar: "MAILSTATS_OUT",
 		},
 		cli.StringFlag{
@@ -88,7 +93,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "collector",
 			Value:  "channel",
-			Usage:  "The kind of collector to use (channel, filesystem or redis)",
+			Usage:  "The kind of collector to use (channel, filesystem, redis or rabbitmq)",
 			EnvVar: "MAILSTATS_COLLECTOR",
 		},
 		cli.IntFlag{
@@ -120,6 +125,42 @@ func MakeApp() *cli.App {
 			Value:  -1,
 			Usage:  "how many parsers should be started",
 			EnvVar: "MAILSTATS_NBPARSERS",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-uri",
+			Value:  "amqp://mailstats:mailstatspass@127.0.0.1:5672/vhmailstats",
+			Usage:  "the RabbitMQ URI",
+			EnvVar: "MAILSTATS_RABBITMQ_URI",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-collector-exchange",
+			Value:  "collector.exchange",
+			Usage:  "the RabbitMQ exchange to use for the RabbitMQ collector",
+			EnvVar: "MAILSTATS_RABBITMQ_COLLECTOR_EXCHANGE",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-collector-queue",
+			Value:  "collector.queue",
+			Usage:  "the RabbitMQ queue to use for the RabbitMQ collector",
+			EnvVar: "MAILSTATS_RABBITMQ_COLLECTOR_QUEUE",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-results-exchange",
+			Value:  "results.exchange",
+			Usage:  "the RabbitMQ exchange to use to push results to RabbitMQ",
+			EnvVar: "MAILSTATS_RABBITMQ_RESULTS_EXCHANGE",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-results-exchange-type",
+			Value:  "direct",
+			Usage:  "the RabbitMQ exchange type to use to push results to RabbitMQ",
+			EnvVar: "MAILSTATS_RABBITMQ_RESULTS_EXCHANGE_TYPE",
+		},
+		cli.StringFlag{
+			Name:   "rabbitmq-results-routing-key",
+			Value:  "results",
+			Usage:  "the RabbitMQ routing key to use to push results to RabbitMQ",
+			EnvVar: "MAILSTATS_RABBITMQ_RESULTS_ROUTING_KEY",
 		},
 	}
 	app.Version = Version
@@ -223,49 +264,85 @@ func MakeApp() *cli.App {
 			Action: Dump,
 		},
 		{
-			Name: "mbox",
+			Name:  "mbox",
 			Usage: "read a mboxrd file",
 			Flags: []cli.Flag{
 				cli.StringFlag{
-					Name: "filename, f",
+					Name:  "filename, f",
 					Usage: "the mbox file to read",
 				},
 			},
 			Action: MBoxAction,
 		},
 		{
-			Name:   "pdfinfo",
-			Usage:  "extract metadata from PDF",
+			Name:  "metadata",
+			Usage: "extract metadata from document",
 			Action: func(c *cli.Context) error {
 				filename := c.String("filename")
 				if filename == "" {
 					return cli.NewExitError("No filename", 1)
 				}
-				meta, err := extractors.PDFInfo(filename)
-				if err != nil {
-					return cli.NewExitError(err, 2)
+				extension := strings.ToLower(filepath.Ext(filename))
+				switch extension {
+				case ".pdf":
+					meta, err := extractors.PDFInfo(filename)
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					fmt.Println(ijson(meta))
+				case ".docx", ".docm":
+					_, meta, _, err := extractors.ConvertDocx(filename)
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					fmt.Println(ijson(meta))
+				case ".odt":
+					_, meta, err := extractors.ConvertODT(filename)
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					fmt.Println(ijson(meta))
+				case ".doc":
+					tool, err := extractors.NewExifToolWrapper()
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer tool.Close()
+					meta, err := tool.ExtractFromFile(filename, "-FlashPix:All")
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					fmt.Println(ijson(meta))
+				case ".jpg", ".jpeg", ".png", ".tiff", ".gif", ".webp":
+					tool, err := extractors.NewExifToolWrapper()
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer tool.Close()
+					meta, err := tool.ExtractFromFile(filename, "-EXIF:All")
+					if err != nil {
+						return cli.NewExitError(err, 2)
+					}
+					fmt.Println(ijson(meta))
 				}
-				b, err := json.Marshal(meta)
-				if err != nil {
-					return cli.NewExitError(err, 2)
-				}
-				fmt.Println(string(b))
 				return nil
 			},
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "filename, f",
-					Usage: "PDF file to analyze",
+					Usage: "File to analyze",
 				},
 			},
 		},
 		{
-			Name: "pdftotext",
+			Name:  "pdftotext",
 			Usage: "convert PDF to text",
 			Flags: []cli.Flag{
 				cli.StringFlag{
-					Name: "filename, f",
-					Usage: "PDF file to process",
+					Name:  "filename, f",
+					Usage: "File to process",
 				},
 			},
 			Action: func(c *cli.Context) error {
@@ -281,6 +358,33 @@ func MakeApp() *cli.App {
 			},
 		},
 		{
+			Name:  "mimetype",
+			Usage: "Detect MIME type of file",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "filename, f",
+					Usage: "File to process",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				fname := strings.TrimSpace(c.String("filename"))
+				if fname != "" {
+					f, err := os.Open(fname)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer f.Close()
+					t, _, err := utils.GuessReader(f)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					fmt.Println(t.MIME.Value)
+				}
+				return nil
+			},
+		},
+		{
 			Name:  "keywords",
 			Usage: "extract keywords from text",
 			Flags: []cli.Flag{
@@ -289,7 +393,7 @@ func MakeApp() *cli.App {
 					Usage: "File to process",
 				},
 				cli.StringFlag{
-					Name: "language, l",
+					Name:  "language, l",
 					Usage: "language of text",
 				},
 			},
@@ -312,9 +416,15 @@ func MakeApp() *cli.App {
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
-					case ".docx":
+					case ".docx", ".docm":
 						var err error
-						content, _, err = extractors.ConvertDocx(f)
+						content, _, _, err = extractors.ConvertDocx(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+					case ".doc":
+						var err error
+						content, err = extractors.ConvertDoc(f)
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
@@ -324,6 +434,8 @@ func MakeApp() *cli.App {
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
+					case ".html":
+						// TODO
 					default:
 						fil, err := os.Open(f)
 						if err != nil {

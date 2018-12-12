@@ -13,6 +13,7 @@ import (
 type RedisArgs struct {
 	URL string
 	ResultsKey string
+	CollectorKey string
 }
 
 func (args RedisArgs) Verify() error {
@@ -41,6 +42,11 @@ func (args *RedisArgs) Populate(c *cli.Context) *RedisArgs {
 	}
 	args.URL = strings.TrimSpace(c.GlobalString("redis-url"))
 	args.ResultsKey = strings.TrimSpace(c.GlobalString("redis-results-key"))
+	args.CollectorKey = strings.TrimSpace(c.GlobalString("redis-collector-key"))
+	if args.CollectorKey == "" {
+		args.CollectorKey = "mailstats.collector"
+	}
+
 	return args
 }
 

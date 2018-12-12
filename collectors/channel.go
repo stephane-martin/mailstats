@@ -3,41 +3,44 @@ package collectors
 import (
 	"context"
 	"github.com/inconshreveable/log15"
+	"github.com/oklog/ulid"
 	"github.com/stephane-martin/mailstats/metrics"
 	"github.com/stephane-martin/mailstats/models"
-	"sync"
+	"github.com/stephane-martin/mailstats/utils"
 )
 
+
 type ChanCollector struct {
-	ch     chan *models.IncomingMail
-	once   sync.Once
-	logger log15.Logger
-	store  *FileStore
+	BaseCollector
+	ch         chan *models.IncomingMail
+	logger     log15.Logger
 }
 
 func NewChanCollector(size int, logger log15.Logger) (*ChanCollector, error) {
-	c := new(ChanCollector)
-	c.logger = logger
-	store, err := NewFileStore("/home/stef/tmp/mailstats", logger)
-	if err != nil {
-		logger.Error("Error creating store", "error", err)
-	}
-	c.store = store
 	if size <= 0 {
-		c.ch = make(chan *models.IncomingMail)
-	} else {
-		c.ch = make(chan *models.IncomingMail, size)
+		size = 10000
 	}
+	c := &ChanCollector{BaseCollector: newBaseCollector(size), logger: logger}
+	c.ch = make(chan *models.IncomingMail, size)
 	return c, nil
 }
 
-func (c *ChanCollector) Push(stop <-chan struct{}, info *models.IncomingMail) error {
-	metrics.M().MailFrom.WithLabelValues(info.MailFrom).Inc()
-	for _, r := range info.RcptTo {
+
+func (c *ChanCollector) Start() error {
+	for m := range c.BaseCollector.Ch {
+		_ = c.Push(c.BaseCollector.Stop, m)
+	}
+	return nil
+}
+
+func (c *ChanCollector) Push(stop <-chan struct{}, m *models.IncomingMail) error {
+	metrics.M().MailFrom.WithLabelValues(m.MailFrom).Inc()
+	for _, r := range m.RcptTo {
 		metrics.M().MailTo.WithLabelValues(r).Inc()
 	}
+	m.UID = utils.NewULID()
 	select {
-	case c.ch <- info:
+	case c.ch <- m:
 		metrics.M().CollectorSize.Inc()
 		return nil
 	case <-stop:
@@ -54,6 +57,7 @@ func (c *ChanCollector) Pull(stop <-chan struct{}) (*models.IncomingMail, error)
 	case m, ok := <-c.ch:
 		if ok {
 			metrics.M().CollectorSize.Dec()
+			c.BaseCollector.Add(ulid.ULID(m.UID), m)
 			return m, nil
 		}
 		return nil, context.Canceled
@@ -66,10 +70,9 @@ func (c *ChanCollector) PullCtx(ctx context.Context) (*models.IncomingMail, erro
 	return c.Pull(ctx.Done())
 }
 
+
 func (c *ChanCollector) Close() error {
-	c.once.Do(func() {
-		close(c.ch)
-	})
+	close(c.ch)
+	c.BaseCollector.Close()
 	return nil
 }
-

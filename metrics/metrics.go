@@ -4,29 +4,30 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-var instance *metrics
+var instance *Metrics
 
 func init() {
 	instance = newMetrics()
 }
 
-func M() *metrics {
+func M() *Metrics {
 	return instance
 }
 
 // TODO: received mail size
 // TODO: parsing time
 
-type metrics struct {
-	Connections   *prometheus.CounterVec
-	MailFrom      *prometheus.CounterVec
-	MailTo *prometheus.CounterVec
-	CollectorSize prometheus.Gauge
-	Registry      *prometheus.Registry
+type Metrics struct {
+	Connections          *prometheus.CounterVec
+	MailFrom             *prometheus.CounterVec
+	MailTo               *prometheus.CounterVec
+	CollectorSize        prometheus.Gauge
+	CollectorPendingSize prometheus.Gauge
+	Registry             *prometheus.Registry
 }
 
-func newMetrics() *metrics {
-	m := new(metrics)
+func newMetrics() *Metrics {
+	m := new(Metrics)
 
 	m.Connections = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
@@ -59,12 +60,20 @@ func newMetrics() *metrics {
 		},
 	)
 
+	m.CollectorPendingSize = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "collector_pending_size",
+			Help: "The number of messages currently processed by workers",
+		},
+	)
+
 	m.Registry = prometheus.NewRegistry()
 	m.Registry.MustRegister(
 		m.Connections,
 		m.MailFrom,
 		m.MailTo,
 		m.CollectorSize,
+		m.CollectorPendingSize,
 	)
 	return m
 }

@@ -11,19 +11,17 @@ import (
 )
 
 type Args struct {
-	SMTP              SMTPArgs
-	Milter            MilterArgs
-	HTTP              HTTPArgs
-	Redis             RedisArgs
-	Consumer          ConsumerArgs
-	Logging           LoggingArgs
-	Forward           ForwardArgs
-	Collector         string
-	CollectorSize     int
-	CollectorDir      string
-	RedisCollectorKey string
-	Secret            *memguard.LockedBuffer
-	NbParsers         int
+	SMTP      SMTPArgs
+	Milter    MilterArgs
+	HTTP      HTTPArgs
+	Redis     RedisArgs
+	Consumer  ConsumerArgs
+	Logging   LoggingArgs
+	Forward   ForwardArgs
+	Collector CollectorArgs
+	Rabbit    RabbitArgs
+	Secret    *memguard.LockedBuffer
+	NbParsers int
 }
 
 func GetArgs(c *cli.Context) (*Args, error) {
@@ -71,27 +69,16 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		return nil, cli.NewExitError(err.Error(), 1)
 	}
 
-	args.Collector = strings.ToLower(c.GlobalString("collector"))
-	if args.Collector == "" {
-		args.Collector = "channel"
-	}
-	if args.Collector != "filesystem" && args.Collector != "channel" && args.Collector != "redis" {
-		return nil, cli.NewExitError("Unknown collector type", 1)
+	args.Collector.Populate(c)
+	err = args.Collector.Verify()
+	if err != nil {
+		return nil, cli.NewExitError(err.Error(), 1)
 	}
 
-	args.CollectorDir = c.GlobalString("collector-dir")
-	if args.CollectorDir == "" {
-		args.CollectorDir = "/var/lib/mailstats"
-	}
-
-	args.CollectorSize = c.GlobalInt("collector-size")
-	if args.CollectorSize <= 0 {
-		args.CollectorSize = 10000
-	}
-
-	args.RedisCollectorKey = strings.TrimSpace(c.GlobalString("redis-collector-key"))
-	if args.RedisCollectorKey == "" {
-		args.RedisCollectorKey = "mailstats.collector"
+	args.Rabbit.Populate(c)
+	err = args.Rabbit.Verify()
+	if err != nil {
+		return nil, cli.NewExitError(err.Error(), 1)
 	}
 
 	sec := strings.TrimSpace(c.GlobalString("secret"))

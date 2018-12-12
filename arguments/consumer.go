@@ -15,6 +15,7 @@ const (
 	File
 	Redis
 	HTTP
+	Rabbit
 )
 
 var ConsumerTypes = map[string]ConsumerType{
@@ -23,6 +24,7 @@ var ConsumerTypes = map[string]ConsumerType{
 	"file": File,
 	"redis": Redis,
 	"http": HTTP,
+	"rabbitmq": Rabbit,
 }
 
 type ConsumerArgs struct {
