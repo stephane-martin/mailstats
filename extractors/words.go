@@ -49,7 +49,6 @@ func filterWord(w string) string {
 	return w
 }
 
-
 func BagOfWords(text string, language string) map[string]int {
 	bag := make(map[string]int)
 	words := ExtractWords(text)
@@ -107,8 +106,8 @@ func shortestWord(words []string) string {
 			shortest = word
 			continue
 		}
-		if len(word) == len(shortest) && word < shortest {
-				shortest = word
+		if utf8.RuneCountInString(word) == utf8.RuneCountInString(shortest) && word < shortest {
+			shortest = word
 		}
 	}
 	return shortest

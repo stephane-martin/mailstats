@@ -103,6 +103,9 @@ func TextRank(content string, stems map[string]string, language string) []rank.S
 }
 
 func Keywords(content string, stems map[string]string, language string) []string {
+	if language == "" {
+		language = Language(content)
+	}
 	tr := TextRank(content, stems, language)
 	keywords := make([]string, 0, 10)
 	var nbWords int

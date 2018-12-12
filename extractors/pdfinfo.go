@@ -19,6 +19,20 @@ var dateFormat = "Mon Jan _2 15:04:05 2006 MST"
 // Sat Nov 24 21:13:01 2018 CET
 // Tue Nov  6 01:57:57 2018 CET
 
+
+type AbsentExe struct {
+	Err error
+	Exe string
+}
+
+func (err *AbsentExe) Error() string {
+	return fmt.Sprintf("Executable '%s' is not in PATH: %s", err.Exe, err.Err)
+}
+
+func Absent(exe string, err error) error {
+	return &AbsentExe{Exe: exe, Err: err}
+}
+
 func PDFToText(filename string) (string, error) {
 	stat, err := os.Stat(filename)
 	if err != nil {
@@ -29,7 +43,7 @@ func PDFToText(filename string) (string, error) {
 	}
 	pdftotextPath, err := exec.LookPath("pdftotext")
 	if err != nil {
-		return "", err
+		return "", Absent("pdftotext", err)
 	}
 	command := cmd.NewCmd(pdftotextPath, "-nopgbrk", "-eol", "unix", "-q", "-enc", "UTF-8", filename, "-")
 	status := <-command.Start()
@@ -67,7 +81,7 @@ func PDFInfo(filename string) (*models.PDFMeta, error) {
 	}
 	pdfinfoPath, err := exec.LookPath("pdfinfo")
 	if err != nil {
-		return nil, err
+		return nil, Absent("pdfinfo", err)
 	}
 	command := cmd.NewCmd(pdfinfoPath, filename)
 	status := <-command.Start()
