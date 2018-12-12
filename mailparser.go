@@ -9,16 +9,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"github.com/h2non/filetype/matchers"
-	"github.com/oklog/ulid"
-	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/extractors"
-	"github.com/stephane-martin/mailstats/forwarders"
-	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
-	"github.com/xi2/xz"
-	"golang.org/x/sync/errgroup"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -29,7 +19,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/abadojack/whatlanggo"
+	"github.com/h2non/filetype/matchers"
+	"github.com/oklog/ulid"
+	"github.com/stephane-martin/mailstats/collectors"
+	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
+	"github.com/xi2/xz"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
 	"golang.org/x/net/html"
@@ -39,34 +39,33 @@ import (
 	"golang.org/x/text/encoding/unicode"
 )
 
-
 type Parser interface {
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
 	Close() error
 }
 
-type parserImpl struct {
+type ParserImpl struct {
 	logger log15.Logger
 	tool   *extractors.ExifToolWrapper
 }
 
-func NewParser(logger log15.Logger) *parserImpl {
+func NewParser(logger log15.Logger) *ParserImpl {
 	tool, err := extractors.NewExifToolWrapper()
 	if err != nil {
 		logger.Info("Failed to locate exiftool", "error", err)
-		return &parserImpl{logger: logger}
+		return &ParserImpl{logger: logger}
 	}
-	return &parserImpl{logger: logger, tool: tool}
+	return &ParserImpl{logger: logger, tool: tool}
 }
 
-func (p *parserImpl) Close() error {
+func (p *ParserImpl) Close() error {
 	if p.tool != nil {
 		return p.tool.Close()
 	}
 	return nil
 }
 
-func (p *parserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
+func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
 	m, err := mail.ReadMessage(bytes.NewReader(i.Data))
 	if err != nil {
 		return nil, err
@@ -133,10 +132,7 @@ func (p *parserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 	features.Images = distinct(images)
 
 	if len(plain) > 0 {
-		langInfo := whatlanggo.Detect(plain)
-		if langInfo.Script != nil && langInfo.Lang != -1 {
-			features.Language = strings.ToLower(whatlanggo.Langs[langInfo.Lang])
-		}
+		features.Language = extractors.Language(plain)
 		features.BagOfWords = extractors.BagOfWords(plain, features.Language)
 	}
 
@@ -217,8 +213,6 @@ func filterPlain(plain string) string {
 	plain = regexp.MustCompile("(?s)<!--.*-->").ReplaceAllLiteralString(plain, "")
 	return strings.TrimSpace(plain)
 }
-
-
 
 func html2text(h string) (text string, links []string, images []string) {
 	h = strings.TrimSpace(h)
@@ -466,9 +460,59 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		} else {
 			attachment.PDFMetadata = m
 		}
+	case matchers.TypeDocx:
+		text, props, hasMacro, err := extractors.ConvertBytesDocx(content)
+		if err != nil {
+			logger.Warn("Error extracting metadata from DOCX", "error", err)
+		} else {
+			meta := &models.DocMeta{
+				Properties: props,
+				HasMacro:   hasMacro,
+				Language:   extractors.Language(text),
+			}
+			if meta.Language != "" {
+				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+			}
+			attachment.DocMetadata = meta
+		}
+	case utils.OdtType:
+		text, props, err := extractors.ConvertBytesODT(content)
+		if err != nil {
+			logger.Warn("Error extracting metadata from ODT", "error", err)
+		} else {
+			meta := &models.DocMeta{
+				Properties: props,
+				Language:   extractors.Language(text),
+			}
+			if meta.Language != "" {
+				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+			}
+			attachment.DocMetadata = meta
+		}
+
+	case matchers.TypeDoc:
+		text, err := extractors.ConvertBytesDoc(content)
+		if err != nil {
+			logger.Warn("Error extracting text from DOC", "error", err)
+		} else {
+			meta := &models.DocMeta{
+				Language: extractors.Language(text),
+			}
+			p, err := tool.Extract(content, "-FlashPix:All")
+			if err != nil {
+				logger.Warn("Error extracting metadata from DOC", "error", err)
+			} else {
+				meta.Properties = p
+			}
+			if meta.Language != "" {
+				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+			}
+			attachment.DocMetadata = meta
+		}
+
 	case matchers.TypePng, matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
 		if tool != nil {
-			meta, err := tool.Extract(content)
+			meta, err := tool.Extract(content, "-EXIF:All")
 			if err != nil {
 				logger.Warn("Failed to extract metadata with exiftool", "error", err)
 			} else {
@@ -530,6 +574,8 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 			}
 		}
 
+	default:
+		logger.Info("Unknown attachment type", "type", typ.MIME.Value)
 	}
 
 	return attachment, nil
@@ -618,6 +664,7 @@ func ParseMails(ctx context.Context, collector collectors.Collector, parser Pars
 				}
 				forwarder.Push(*incoming)
 				features, err := parser.Parse(incoming)
+				collector.ACK(incoming.UID)
 				if err != nil {
 					logger.Info("Failed to parse message", "error", err)
 					continue L
@@ -629,7 +676,7 @@ func ParseMails(ctx context.Context, collector collectors.Collector, parser Pars
 					} else {
 						logger.Debug("Parsing results sent to consumer")
 					}
-					return err
+					return nil
 				})
 
 			}
