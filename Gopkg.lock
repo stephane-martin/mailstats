@@ -58,6 +58,20 @@
   version = "v1.7.1"
 
 [[projects]]
+  branch = "v1"
+  digest = "1:6590a87179497c76c56a6dfac7e44163e3b0bb12cb3b34f89d80ace878a13c97"
+  name = "github.com/emersion/go-imap"
+  packages = [
+    ".",
+    "client",
+    "commands",
+    "responses",
+    "utf7",
+  ]
+  pruneopts = "UT"
+  revision = "9747fff06224070a57247f9fc49cd00ebf5a2d69"
+
+[[projects]]
   branch = "master"
   digest = "1:7cc7f47cf4e6f9be30f0e38934f6470cf4c35c9479350bc5e764d3e428018e2e"
   name = "github.com/emersion/go-sasl"
@@ -625,6 +639,8 @@
     "github.com/abadojack/whatlanggo",
     "github.com/awnumar/memguard",
     "github.com/blabber/mbox",
+    "github.com/emersion/go-imap",
+    "github.com/emersion/go-imap/client",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
     "github.com/fsnotify/fsnotify",

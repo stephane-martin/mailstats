@@ -273,7 +273,7 @@ func (w *WorkerClient) Auth(ctx context.Context) error {
 	return err
 }
 
-func Worker(c *cli.Context) error {
+func WorkerAction(c *cli.Context) error {
 	var logArgs arguments.LoggingArgs
 	logArgs.Populate(c)
 	err := logArgs.Verify()

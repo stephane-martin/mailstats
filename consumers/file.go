@@ -1,9 +1,9 @@
 package consumers
 
 import (
-	"encoding/json"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"os"
 	"sync"
@@ -17,7 +17,7 @@ type Writer struct {
 
 func (w Writer) Consume(features *models.FeaturesMail) (err error) {
 	printLock.Lock()
-	err = json.NewEncoder(w.WriteCloser).Encode(features)
+	err = utils.JSONEncoder(w.WriteCloser).Encode(features)
 	printLock.Unlock()
 	return err
 }

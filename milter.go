@@ -123,7 +123,7 @@ func (e *StatsMilter) Body(m *milter.Modifier) (milter.Response, error) {
 	return milter.RespTempFail, err
 }
 
-func Milter(c *cli.Context) error {
+func MilterAction(c *cli.Context) error {
 	args, err := arguments.GetArgs(c)
 	if err != nil {
 		return err

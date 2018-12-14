@@ -79,7 +79,7 @@ func (u *User) Logout() error {
 	return nil
 }
 
-func SMTP(c *cli.Context) error {
+func SMTPAction(c *cli.Context) error {
 	args, err := arguments.GetArgs(c)
 	if err != nil {
 		return err

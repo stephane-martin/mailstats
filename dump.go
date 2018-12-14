@@ -12,7 +12,7 @@ import (
 	"os"
 )
 
-func Dump(c *cli.Context) {
+func DumpAction(c *cli.Context) {
 	http.HandleFunc("/dump", func(hw http.ResponseWriter, r *http.Request) {
 		charset := ""
 		w := os.Stderr

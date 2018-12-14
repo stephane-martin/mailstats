@@ -1,7 +1,6 @@
 package consumers
 
 import (
-	"encoding/json"
 	"github.com/go-redis/redis"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
@@ -17,7 +16,7 @@ func NewRedisConsumer(args arguments.RedisArgs) (*RedisConsumer, error) {
 }
 
 func (c *RedisConsumer) Consume(features *models.FeaturesMail) error {
-	b, err := json.Marshal(features)
+	b, err := utils.JSONMarshal(features)
 	if err != nil {
 		return err
 	}

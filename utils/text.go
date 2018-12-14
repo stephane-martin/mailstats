@@ -1,13 +1,36 @@
 package utils
 
 import (
+	"bytes"
+	"encoding/json"
 	"golang.org/x/text/unicode/norm"
+	"io"
 	"regexp"
 	"strings"
 )
 
 func Normalize(s string) string {
 	return norm.NFKC.String(s)
+}
+
+func JSONEncoder(w io.Writer) *json.Encoder {
+	enc := json.NewEncoder(w)
+	enc.SetEscapeHTML(false)
+	return enc
+}
+
+func JSONMarshal(v interface{}) ([]byte, error) {
+	var b bytes.Buffer
+	err := JSONEncoder(&b).Encode(v)
+	return b.Bytes(), err
+}
+
+func JSONString(v interface{}) (string, error) {
+	var s strings.Builder
+	enc := JSONEncoder(&s)
+	enc.SetIndent("", "  ")
+	err := enc.Encode(v)
+	return s.String(), err
 }
 
 func Snake(s string) string {

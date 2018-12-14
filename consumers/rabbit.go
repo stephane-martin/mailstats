@@ -2,11 +2,11 @@ package consumers
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/inconshreveable/log15"
 	"github.com/rafaeljesus/rabbus"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
 	"time"
 )
 
@@ -56,7 +56,7 @@ func NewRabbitConsumer(args arguments.RabbitArgs, logger log15.Logger) (Consumer
 }
 
 func (c *RabbitConsumer) Consume(features *models.FeaturesMail) error {
-	b, err := json.Marshal(features)
+	b, err := utils.JSONMarshal(features)
 	if err != nil {
 		return err
 	}

@@ -1,7 +1,6 @@
 package consumers
 
 import (
-	"encoding/json"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
@@ -25,7 +24,7 @@ func NewHTTPConsumer(args arguments.ConsumerArgs) (Consumer, error) {
 func (c *HTTPConsumer) Consume(features *models.FeaturesMail) error {
 	r, w := io.Pipe()
 	go func() {
-		err := json.NewEncoder(w).Encode(features)
+		err := utils.JSONEncoder(w).Encode(features)
 		_ = w.CloseWithError(err)
 	}()
 	_, err := c.client.Post(c.url, "application/json", r)

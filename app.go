@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/utils"
+	"github.com/urfave/cli"
 	"io/ioutil"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
-
-	"github.com/urfave/cli"
 )
 
 func ijson(obj interface{}) string {
@@ -166,12 +165,12 @@ func MakeApp() *cli.App {
 		{
 			Name:   "worker",
 			Usage:  "start worker",
-			Action: Worker,
+			Action: WorkerAction,
 		},
 		{
 			Name:   "milter",
 			Usage:  "start as a Postfix milter",
-			Action: Milter,
+			Action: MilterAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
@@ -190,7 +189,7 @@ func MakeApp() *cli.App {
 		{
 			Name:   "smtp",
 			Usage:  "start as a SMTP service",
-			Action: SMTP,
+			Action: SMTPAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
@@ -220,7 +219,7 @@ func MakeApp() *cli.App {
 		{
 			Name:   "dump",
 			Usage:  "start a debug HTTP server",
-			Action: Dump,
+			Action: DumpAction,
 		},
 		{
 			Name:  "mbox",
@@ -232,6 +231,18 @@ func MakeApp() *cli.App {
 				},
 			},
 			Action: MBoxAction,
+		},
+		{
+			Name:  "imapdownload",
+			Usage: "Read and parse IMAP box",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "uri",
+					Usage: "IMAP connection uri",
+					Value: "imaps://user:pass@example.org:993/INBOX",
+				},
+			},
+			Action: IMAPDownloadAction,
 		},
 		{
 			Name:  "metadata",

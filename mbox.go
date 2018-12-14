@@ -75,6 +75,7 @@ func MBoxAction(c *cli.Context) error {
 
 	g.Go(func() error {
 		defer func() {
+			logger.Info("No more messages")
 			_ = collector.Close()
 		}()
 		for scanner.Next() {
@@ -111,7 +112,6 @@ func MBoxAction(c *cli.Context) error {
 			logger.Warn("Error parsing mail from mbox", "error", err)
 			return err
 		}
-		logger.Info("No more messages")
 		return nil
 	})
 

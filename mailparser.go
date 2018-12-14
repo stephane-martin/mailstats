@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"mime"
 	"mime/multipart"
+	"mime/quotedprintable"
 	"net/mail"
 	"net/url"
 	"regexp"
@@ -282,7 +283,10 @@ func html2text(h string) (text string, links []string, images []string) {
 	return strings.TrimSpace(strings.Join(texts, " ")), links, images
 }
 
-func decodeBody(body io.Reader, charset string) string {
+func decodeBody(body io.Reader, charset string, qp string) string {
+	if qp == "quoted-printable" {
+		body = quotedprintable.NewReader(body)
+	}
 	if charset != "" {
 		encoder, err := htmlindex.Get(charset)
 		if err == nil {
@@ -345,12 +349,13 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 	}
 
 	charset := strings.TrimSpace(params["charset"])
+	qp := strings.ToLower(strings.TrimSpace(msg.Header.Get("Content-Transfer-Encoding")))
 	if contentType == "text/plain" {
-		b := decodeBody(msg.Body, charset)
+		b := decodeBody(msg.Body, charset, qp)
 		return contentType, b, nil, nil
 	}
 	if contentType == "text/html" {
-		return contentType, "", []string{decodeBody(msg.Body, charset)}, nil
+		return contentType, "", []string{decodeBody(msg.Body, charset, qp)}, nil
 	}
 	if !strings.HasPrefix(contentType, "multipart/") {
 		return contentType, "", nil, nil
@@ -373,6 +378,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			continue
 		}
 		subctHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
+
 		if len(subctHeader) == 0 {
 			logger.Info("NextPart: no Content-Type")
 			continue
@@ -392,9 +398,10 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		}
 
 		if strings.HasPrefix(subContentType, "multipart/") {
+			h := fmt.Sprintf("Content-Type: %s\n\n", subctHeader)
 			_, subplain, subhtmls, subAttachments := ParsePart(
 				io.MultiReader(
-					strings.NewReader(fmt.Sprintf("Content-Type: %s\n\n", subctHeader)),
+					strings.NewReader(h),
 					subpart,
 				),
 				tool,
@@ -410,12 +417,12 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		if len(fn) == 0 {
 			if subContentType == "text/plain" {
 				subCharset := strings.TrimSpace(subParams["charset"])
-				b := decodeBody(subpart, subCharset)
+				b := decodeBody(subpart, subCharset, "")
 				plain = plain + b + "\n"
 			}
 			if subContentType == "text/html" {
 				subCharset := strings.TrimSpace(subParams["charset"])
-				htmls = append(htmls, decodeBody(subpart, subCharset))
+				htmls = append(htmls, decodeBody(subpart, subCharset, ""))
 			}
 			continue
 		}
@@ -510,7 +517,17 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 			attachment.DocMetadata = meta
 		}
 
-	case matchers.TypePng, matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
+	case matchers.TypePng:
+		if tool != nil {
+			meta, err := tool.Extract(content, "-EXIF:All", "-PNG:All")
+			if err != nil {
+				logger.Warn("Failed to extract metadata with exiftool", "error", err)
+			} else {
+				attachment.ImageMetadata = meta
+			}
+		}
+
+	case matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
 		if tool != nil {
 			meta, err := tool.Extract(content, "-EXIF:All")
 			if err != nil {
