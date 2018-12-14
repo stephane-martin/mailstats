@@ -494,11 +494,15 @@ world
 would
 wouldnt
 youd
+you'd
 you'll
+youll
 your
+you're
 youre
 yours
 yourself
 yourselves
+youve
 you've
 zero

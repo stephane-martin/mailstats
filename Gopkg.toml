@@ -138,6 +138,22 @@
     name = "github.com/emersion/go-imap"
     branch = "v1"
 
+[[constraint]]
+    name = "github.com/emersion/go-imap-compress"
+    branch = "master"
+
+[[constraint]]
+    name = "github.com/emersion/go-imap-idle"
+    branch = "master"
+
+[[constraint]]
+    name = "github.com/ahmetb/go-linq"
+    version = "3.0.0"
+
+[[constraint]]
+    name = "github.com/emersion/go-message"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

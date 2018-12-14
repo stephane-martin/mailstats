@@ -23,6 +23,14 @@
   revision = "01d4c01a5a7c58f22e17df47209425451fb14087"
 
 [[projects]]
+  digest = "1:e2921241c77283579f383d04139a68aaca100668a26de5e1bc56d29d896ee304"
+  name = "github.com/ahmetb/go-linq"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "7e71c124c1f903df09ca08678f145f68b45d125e"
+  version = "v3.0.0"
+
+[[projects]]
   digest = "1:47fd1237abeac1246a1e690f3c6c8e8c5b963b5bf946be4f9c8210453a502a11"
   name = "github.com/awnumar/memguard"
   packages = [
@@ -59,17 +67,43 @@
 
 [[projects]]
   branch = "v1"
-  digest = "1:6590a87179497c76c56a6dfac7e44163e3b0bb12cb3b34f89d80ace878a13c97"
+  digest = "1:ae84f7819e298e6566047f73f4ae41fb71549a1ead79aa5c623e8406abbe94da"
   name = "github.com/emersion/go-imap"
   packages = [
     ".",
+    "backend",
     "client",
     "commands",
     "responses",
+    "server",
     "utf7",
   ]
   pruneopts = "UT"
   revision = "9747fff06224070a57247f9fc49cd00ebf5a2d69"
+
+[[projects]]
+  branch = "master"
+  digest = "1:f752489f4a067eb22e6e04150394ff4ed145af9f8922bd29e2f5767809ab438c"
+  name = "github.com/emersion/go-imap-compress"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "f036eda446815469cea9e334748d166a33fbe270"
+
+[[projects]]
+  branch = "master"
+  digest = "1:13ef30fd7e97dd46c8d345e80e10c320c3b0feb13cefe590ed7cc70e9d26b6b6"
+  name = "github.com/emersion/go-imap-idle"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "2af93776db6b042cc1116b0d0af00d7f58eea696"
+
+[[projects]]
+  branch = "master"
+  digest = "1:49c792ad11eb4a18662772f40d39c9cf07bba2d0b3f3306c0d8498b8c9b0923b"
+  name = "github.com/emersion/go-message"
+  packages = ["charset"]
+  pruneopts = "UT"
+  revision = "63ac8399c1e4c07ca2a233b0fa6d205694c7bdbe"
 
 [[projects]]
   branch = "master"
@@ -637,10 +671,14 @@
     "github.com/DavidBelicza/TextRank",
     "github.com/DavidBelicza/TextRank/rank",
     "github.com/abadojack/whatlanggo",
+    "github.com/ahmetb/go-linq",
     "github.com/awnumar/memguard",
     "github.com/blabber/mbox",
     "github.com/emersion/go-imap",
+    "github.com/emersion/go-imap-compress",
+    "github.com/emersion/go-imap-idle",
     "github.com/emersion/go-imap/client",
+    "github.com/emersion/go-message/charset",
     "github.com/emersion/go-sasl",
     "github.com/emersion/go-smtp",
     "github.com/fsnotify/fsnotify",

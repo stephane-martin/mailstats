@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/emersion/go-imap"
+	"github.com/emersion/go-imap-compress"
 	"github.com/emersion/go-imap/client"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
@@ -42,6 +43,15 @@ func IMAPDownloadAction(c *cli.Context) error {
 		return cli.NewExitError("Scheme must be imap or imaps", 1)
 	}
 
+	host, portS, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Error splitting host/port: %s", err.Error()), 1)
+	}
+	port, err := strconv.ParseInt(portS, 10, 32)
+	if err != nil {
+		return cli.NewExitError("Port is not a number", 1)
+	}
+
 	username := strings.TrimSpace(u.User.Username())
 	password, _ := u.User.Password()
 	password = strings.TrimSpace(password)
@@ -69,6 +79,19 @@ func IMAPDownloadAction(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("Failed to authenticate: %s", err.Error()), 1)
 	}
 
+
+	// Enable compression if possible
+	comp := compress.NewClient(clt)
+	if ok, err := comp.SupportCompress(compress.Deflate); err != nil {
+		return cli.NewExitError(fmt.Sprintf("IMAP support compress error: %s", err.Error()), 1)
+	} else if ok {
+		if err := comp.Compress(compress.Deflate); err != nil {
+			return cli.NewExitError(fmt.Sprintf("IMAP compress error: %s", err.Error()), 1)
+		} else {
+			logger.Info("IMAP compression", "enabled", comp.IsCompress())
+		}
+	}
+
 	// List mailboxes
 	//mailboxes := make(chan *imap.MailboxInfo, 10)
 	//done := make(chan error, 1)
@@ -76,22 +99,13 @@ func IMAPDownloadAction(c *cli.Context) error {
 	//	done <- c.List("", "*", mailboxes)
 	//}()
 
-	// Select INBOX
+	// Select box
 	mbox, err := clt.Select(strings.Trim(u.Path, "/"), false)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to select box: %s", err.Error()), 1)
 	}
 	if mbox.Messages == 0 {
 		return nil
-	}
-
-	host, portS, err := net.SplitHostPort(u.Host)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Error splitting host/port: %s", err.Error()), 1)
-	}
-	port, err  := strconv.ParseInt(portS, 10, 32)
-	if err != nil {
-		return cli.NewExitError("Port is not a number", 1)
 	}
 
 	seqset := new(imap.SeqSet)
@@ -136,7 +150,16 @@ func IMAPDownloadAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return clt.Fetch(seqset, []imap.FetchItem{section.FetchItem()}, imapMsgs)
+		criteria := imap.NewSearchCriteria()
+		criteria.Uid = new(imap.SeqSet)
+		_ = criteria.Uid.Add("1:*")
+		uids, err := clt.UidSearch(criteria)
+		if err != nil {
+			return err
+		}
+		set := new(imap.SeqSet)
+		set.AddNum(uids...)
+		return clt.UidFetch(set, []imap.FetchItem{section.FetchItem()}, imapMsgs)
 	})
 
 	g.Go(func() error {

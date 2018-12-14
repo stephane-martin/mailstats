@@ -207,12 +207,13 @@ func MakeApp() *cli.App {
 					Name:   "max-size",
 					Usage:  "Maximum incoming message size in bytes",
 					Value:  60 * 1024 * 1024,
-					EnvVar: "MAILTSATS_SMTP_MAXSIZE",
+					EnvVar: "MAILSTATS_SMTP_MAXSIZE",
 				},
 				cli.IntFlag{
 					Name:  "max-idle",
 					Usage: "Maximum idle time in seconds",
 					Value: 300,
+					EnvVar: "MAILSTATS_SMTP_MAXIDLE",
 				},
 			},
 		},
@@ -228,6 +229,7 @@ func MakeApp() *cli.App {
 				cli.StringFlag{
 					Name:  "filename, f",
 					Usage: "the mbox file to read",
+					EnvVar: "MAILSTATS_MBOX_FILE",
 				},
 			},
 			Action: MBoxAction,
@@ -240,9 +242,23 @@ func MakeApp() *cli.App {
 					Name:  "uri",
 					Usage: "IMAP connection uri",
 					Value: "imaps://user:pass@example.org:993/INBOX",
+					EnvVar: "MAILSTATS_IMAP_DOWNLOAD_URI",
 				},
 			},
 			Action: IMAPDownloadAction,
+		},
+		{
+			Name:  "imapmonitor",
+			Usage: "Monitor an IMAP box for new messages",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "uri",
+					Usage: "IMAP connection uri",
+					Value: "imaps://user:pass@example.org:993/INBOX",
+					EnvVar: "MAILSTATS_IMAP_MONITOR_URI",
+				},
+			},
+			Action: IMAPMonitorAction,
 		},
 		{
 			Name:  "metadata",
