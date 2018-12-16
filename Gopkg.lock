@@ -58,6 +58,18 @@
   revision = "1ce958f907de4a9e5419e827f24ca8615e28995d"
 
 [[projects]]
+  digest = "1:efe49e0531456ffd6549e1cf5a01144d954498cd93da009e25485dc73a8002ed"
+  name = "github.com/chrisport/go-lang-detector"
+  packages = [
+    "langdet",
+    "langdet/internal",
+    "langdet/langdetdef",
+  ]
+  pruneopts = "UT"
+  revision = "19cc075c564bc8cc0da0d90dd382c475a1b61c78"
+  version = "v0.2"
+
+[[projects]]
   digest = "1:e47d51dab652d26c3fba6f8cba403f922d02757a82abdc77e90df7948daf296e"
   name = "github.com/deckarep/golang-set"
   packages = ["."]
@@ -240,6 +252,14 @@
   revision = "767a23049b9e59ef675496a9406a1e456bc5ad6e"
 
 [[projects]]
+  branch = "master"
+  digest = "1:2c73f0318e9e0f972a39ced70b2648f2764259938bb15ac9daed20f4d49da70f"
+  name = "github.com/jordic/goics"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "feb996c8e01f48a15f84459592b5d1993e12f0ec"
+
+[[projects]]
   digest = "1:3e551bbb3a7c0ab2a2bf4660e7fcad16db089fdcfbb44b0199e62838038623ea"
   name = "github.com/json-iterator/go"
   packages = ["."]
@@ -352,6 +372,22 @@
   pruneopts = "UT"
   revision = "02a8604050d8466dd915307496174adb9be4593a"
   version = "v1.3.1"
+
+[[projects]]
+  digest = "1:2e8bdbc8a11d716dab1bf66d326285d7e5c92fa4c996c1574ba1153e57534b85"
+  name = "github.com/oschwald/geoip2-golang"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "7118115686e16b77967cdbf55d1b944fe14ad312"
+  version = "v1.2.1"
+
+[[projects]]
+  digest = "1:07e8589503b7ec22430dae6eed6f2c17e4249ab245574f4fd0ba8fc9c597d138"
+  name = "github.com/oschwald/maxminddb-golang"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c5bec84d1963260297932a1b7a1753c8420717a7"
+  version = "v1.3.0"
 
 [[projects]]
   branch = "master"
@@ -674,6 +710,8 @@
     "github.com/ahmetb/go-linq",
     "github.com/awnumar/memguard",
     "github.com/blabber/mbox",
+    "github.com/chrisport/go-lang-detector/langdet",
+    "github.com/chrisport/go-lang-detector/langdet/langdetdef",
     "github.com/emersion/go-imap",
     "github.com/emersion/go-imap-compress",
     "github.com/emersion/go-imap-idle",
@@ -692,11 +730,13 @@
     "github.com/h2non/filetype/types",
     "github.com/inconshreveable/log15",
     "github.com/jdkato/prose",
+    "github.com/jordic/goics",
     "github.com/kljensen/snowball",
     "github.com/mostlygeek/go-exiftool",
     "github.com/mvdan/xurls",
     "github.com/nwaples/rardecode",
     "github.com/oklog/ulid",
+    "github.com/oschwald/geoip2-golang",
     "github.com/phalaaxx/milter",
     "github.com/pierrec/lz4",
     "github.com/pkg/errors",
@@ -712,7 +752,6 @@
     "golang.org/x/crypto/nacl/secretbox",
     "golang.org/x/net/html",
     "golang.org/x/sync/errgroup",
-    "golang.org/x/text/encoding",
     "golang.org/x/text/encoding/charmap",
     "golang.org/x/text/encoding/htmlindex",
     "golang.org/x/text/encoding/unicode",

@@ -154,6 +154,18 @@
     name = "github.com/emersion/go-message"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/chrisport/go-lang-detector"
+    version = "0.2"
+
+[[constraint]]
+    name = "github.com/oschwald/geoip2-golang"
+    version = "1.2.1"
+
+[[constraint]]
+    name = "github.com/jordic/goics"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true
