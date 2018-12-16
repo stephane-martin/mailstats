@@ -15,6 +15,7 @@ import (
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
 	"io/ioutil"
+	"math"
 	"net"
 	"net/url"
 	"os"
@@ -50,6 +51,23 @@ func IMAPDownloadAction(c *cli.Context) error {
 	port, err := strconv.ParseInt(portS, 10, 32)
 	if err != nil {
 		return cli.NewExitError("Port is not a number", 1)
+	}
+
+	maxDownloads := c.Uint64("max")
+	if maxDownloads == 0 {
+		maxDownloads = math.MaxUint32
+	}
+	if maxDownloads > math.MaxUint32 {
+		maxDownloads = math.MaxUint32
+	}
+
+	if c.GlobalBool("geoip") {
+		err := utils.InitGeoIP(c.GlobalString("geoip-database-path"))
+		if err != nil {
+			return cli.NewExitError(fmt.Sprintf("Error loading GeoIP database: %s", err), 1)
+		}
+		//noinspection GoUnhandledErrorResult
+		defer utils.CloseGeoIP()
 	}
 
 	username := strings.TrimSpace(u.User.Username())
@@ -107,8 +125,13 @@ func IMAPDownloadAction(c *cli.Context) error {
 	if mbox.Messages == 0 {
 		return nil
 	}
+	var nbDownloads uint32 = uint32(maxDownloads)
+	if nbDownloads > mbox.Messages {
+		nbDownloads = mbox.Messages
+	}
 
 	seqset := new(imap.SeqSet)
+
 	seqset.AddRange(1, mbox.Messages)
 
 	imapMsgs := make(chan *imap.Message)
@@ -151,8 +174,8 @@ func IMAPDownloadAction(c *cli.Context) error {
 
 	g.Go(func() error {
 		criteria := imap.NewSearchCriteria()
-		criteria.Uid = new(imap.SeqSet)
-		_ = criteria.Uid.Add("1:*")
+		criteria.SeqNum = new(imap.SeqSet)
+		criteria.SeqNum.AddRange(mbox.Messages + 1 - nbDownloads, mbox.Messages)
 		uids, err := clt.UidSearch(criteria)
 		if err != nil {
 			return err

@@ -1,6 +1,9 @@
 package models
 
-import "time"
+import (
+	"net"
+	"time"
+)
 
 type FeaturesMail struct {
 	BaseInfos
@@ -15,6 +18,7 @@ type FeaturesMail struct {
 	Keywords     []string            `json:"keywords,omitempty"`
 	Language     string              `json:"language,omitempty"`
 	TimeHeader   string              `json:"time_header,omitempty"`
+	Received     []ReceivedElement   `json:"received,omitempty"`
 	// TODO: check that From is consistent/scam
 	From   Address   `json:"from,omitempty"`
 	To     []Address `json:"to,omitempty"`
@@ -24,20 +28,58 @@ type FeaturesMail struct {
 	Images []string  `json:"images,omitempty"`
 }
 
-type Attachment struct {
-	Name         string   `json:"name,omitempty"`
-	InferredType string   `json:"inferred_type,omitempty"`
-	ReportedType string   `json:"reported_type,omitempty"`
-	Size         uint64   `json:"size"`
-	Hash         string   `json:"hash,omitempty"`
-	PDFMetadata  *PDFMeta `json:"pdf_metadata,omitempty"`
-	DocMetadata  *DocMeta `json:"doc_metadata,omitempty"`
+type ReceivedElement struct {
+	From         *ReceivedFrom `json:"from,omitempty"`
+	By           *ReceivedBy   `json:"by,omitempty"`
+	Protocol     string        `json:"protocol,omitempty"`
+	ID           string        `json:"id,omitempty"`
+	TLS          string        `json:"tls,omitempty"`
+	For          string        `json:"for,omitempty"`
+	Timestamp    *time.Time    `json:"time,omitempty"`
+	EnvelopeFrom string        `json:"envelope_from,omitempty"`
+	Helo         string        `json:"helo,omitempty"`
+	Raw          string        `json:"raw"`
+}
 
+type ReceivedFrom struct {
+	ReportedName    string      `json:"reported_name,omitempty"`
+	IP              *ReceivedIP `json:"ip,omitempty"`
+	DNSReversedName string      `json:"reversed_name,omitempty"`
+}
+
+type ReceivedIP struct {
+	Parsed   net.IP       `json:"parsed,omitempty"`
+	Reported string       `json:"reported,omitempty"`
+	Public   bool         `json:"public"`
+	Location *GeoIPResult `json:"location,omitempty"`
+}
+
+type ReceivedBy struct {
+	Name     string `json:"name,omitempty"`
+	Software string `json:"software,omitempty"`
+}
+
+type GeoIPResult struct {
+	Country   string  `json:"country,omitempty"`
+	Continent string  `json:"continent,omitempty"`
+	City      string  `json:"city,omitempty"`
+	Latitude  float64 `json:"latitude,omitempty"`
+	Longitude float64 `json:"longitude,omitempty"`
+}
+
+type Attachment struct {
+	Name           string   `json:"name,omitempty"`
+	InferredType   string   `json:"inferred_type,omitempty"`
+	ReportedType   string   `json:"reported_type,omitempty"`
+	Size           uint64   `json:"size"`
+	Hash           string   `json:"hash,omitempty"`
+	PDFMetadata    *PDFMeta `json:"pdf_metadata,omitempty"`
+	DocMetadata    *DocMeta `json:"doc_metadata,omitempty"`
+	EventsMetadata []*Event `json:"event_metadata,omitempty"`
 	// TODO: ImageMetadata should be more defined
 	ImageMetadata map[string]interface{} `json:"image_metadata,omitempty"`
-
-	Archives      map[string]*Archive `json:"archive_content,omitempty"`
-	SubAttachment *Attachment         `json:"sub_attachment,omitempty"`
+	Archives      map[string]*Archive    `json:"archive_content,omitempty"`
+	SubAttachment *Attachment            `json:"sub_attachment,omitempty"`
 	// TODO
 	Executable bool `json:"is_executable"`
 }
@@ -45,6 +87,14 @@ type Attachment struct {
 type Address struct {
 	Name    string `json:"name,omitempty"`
 	Address string `json:"address,omitempty"`
+}
+
+type Event struct {
+	Summary     string
+	Description string
+	Location    string
+	Start       *time.Time
+	End         *time.Time
 }
 
 type PDFMeta struct {

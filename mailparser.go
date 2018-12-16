@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"github.com/emersion/go-message/charset"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -21,6 +22,7 @@ import (
 	"time"
 
 	"github.com/h2non/filetype/matchers"
+	"github.com/jordic/goics"
 	"github.com/oklog/ulid"
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
@@ -33,12 +35,17 @@ import (
 
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
-	"golang.org/x/net/html"
-	"golang.org/x/text/encoding"
 	"golang.org/x/text/encoding/charmap"
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/unicode"
 )
+
+
+
+// from m0892.contabo.net ([91.194.91.211]:40338 helo=91.194.91.211) by m1363.contabo.net with esmtpsa (TLSv1.2:ECDHE-RSA-AES256-GCM-SHA384:256) (Exim 4.88) (envelope-from <support@contabo.com>) id 1ciAQt-0005YX-7L; Mon, 27 Feb 2017 02:48:59 +0100
+// (envelope-from <newsletter@liberation.cccampaigns.net>)
+// (envelope-from <bounce-md_30850198.5c14c57c.v1-a48f024874c347249d7f5eb681ffab1d@mandrillapp.com>)
+
 
 type Parser interface {
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
@@ -101,7 +108,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 
 	var b strings.Builder
 	for _, h := range htmls {
-		t, eurls, eimages := html2text(h)
+		t, eurls, eimages := extractors.HTML2Text(h)
 		if len(t) > 0 {
 			b.WriteString(t)
 			b.WriteString(".\n")
@@ -110,7 +117,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 		images = append(images, eimages...)
 	}
 	ahtml := strings.TrimSpace(b.String())
-	if len(ahtml) > 0 {
+	if len(ahtml) > 0 && (len(ahtml) >= (len(plain)/2)) {
 		plain = ahtml
 	}
 	// unicode normalization
@@ -178,6 +185,14 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 		delete(features.Headers, "subject")
 	}
 
+	if len(features.Headers["received"]) > 0 {
+		features.Received = make([]models.ReceivedElement, 0)
+		for _, h := range features.Headers["received"] {
+			features.Received = append(features.Received, extractors.ParseReceivedHeader(h, p.logger))
+		}
+		delete(features.Headers, "received")
+	}
+
 	return features, nil
 }
 
@@ -213,74 +228,6 @@ func filterPlain(plain string) string {
 	plain = strings.Join(lines, "\n")
 	plain = regexp.MustCompile("(?s)<!--.*-->").ReplaceAllLiteralString(plain, "")
 	return strings.TrimSpace(plain)
-}
-
-func html2text(h string) (text string, links []string, images []string) {
-	h = strings.TrimSpace(h)
-	if len(h) == 0 {
-		return "", nil, nil
-	}
-	texts := make([]string, 0)
-	z := html.NewTokenizer(strings.NewReader(h))
-	ignoreScript := false
-	ignoreNoScript := false
-	ignoreStyle := false
-	for {
-		t := z.Next()
-		if t == html.ErrorToken {
-			break
-		} else if t == html.StartTagToken {
-			tok := z.Token()
-			tagName := strings.ToLower(tok.Data)
-			if tagName == "script" {
-				ignoreScript = true
-			} else if tagName == "noscript" {
-				ignoreNoScript = true
-			} else if tagName == "style" {
-				ignoreStyle = true
-			} else if tagName == "a" {
-				for _, attr := range tok.Attr {
-					if strings.ToLower(attr.Key) == "href" {
-						v, err := url.PathUnescape(attr.Val)
-						if err == nil {
-							links = append(links, v)
-						}
-						break
-					}
-				}
-			} else if tagName == "img" {
-				for _, attr := range tok.Attr {
-					if strings.ToLower(attr.Key) == "src" {
-						v, err := url.PathUnescape(attr.Val)
-						if err == nil {
-							images = append(images, v)
-						}
-						break
-					}
-				}
-			} else {
-			}
-		} else if t == html.EndTagToken {
-			tok := z.Token()
-			tagName := strings.ToLower(tok.Data)
-			if tagName == "script" {
-				ignoreScript = false
-			} else if tagName == "noscript" {
-				ignoreNoScript = false
-			} else if tagName == "style" {
-				ignoreStyle = false
-			} else if tagName == "title" || tagName == "h1" || tagName == "h2" || tagName == "h3" || tagName == "h4" || tagName == "h5" || tagName == "h6" {
-				texts = append(texts, ".")
-			}
-		} else if t == html.TextToken && !ignoreScript && !ignoreStyle && !ignoreNoScript {
-			tok := z.Token()
-			textData := strings.TrimSpace(tok.Data)
-			if len(textData) > 0 {
-				texts = append(texts, textData)
-			}
-		}
-	}
-	return strings.TrimSpace(strings.Join(texts, " ")), links, images
 }
 
 func decodeBody(body io.Reader, charset string, qp string) string {
@@ -348,14 +295,14 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		return "", "", nil, nil
 	}
 
-	charset := strings.TrimSpace(params["charset"])
+	cset := strings.TrimSpace(params["charset"])
 	qp := strings.ToLower(strings.TrimSpace(msg.Header.Get("Content-Transfer-Encoding")))
 	if contentType == "text/plain" {
-		b := decodeBody(msg.Body, charset, qp)
+		b := decodeBody(msg.Body, cset, qp)
 		return contentType, b, nil, nil
 	}
 	if contentType == "text/html" {
-		return contentType, "", []string{decodeBody(msg.Body, charset, qp)}, nil
+		return contentType, "", []string{decodeBody(msg.Body, cset, qp)}, nil
 	}
 	if !strings.HasPrefix(contentType, "multipart/") {
 		return contentType, "", nil, nil
@@ -457,7 +404,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		return nil, err
 	}
 	attachment.InferredType = typ.MIME.Value
-	logger.Debug("Attachment", "value", typ.MIME.Value, "type", typ.MIME.Type, "subtype", typ.MIME.Subtype)
+	logger.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
 
 	switch typ {
 	case matchers.TypePdf:
@@ -592,7 +539,16 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		}
 
 	default:
-		logger.Info("Unknown attachment type", "type", typ.MIME.Value)
+		if typ.MIME.Value == "text/plain" && strings.HasSuffix(filename, ".ics") {
+			dec := goics.NewDecoder(bytes.NewReader(content))
+			c := new(extractors.IcalConsumer)
+			err := dec.Decode(c)
+			if err == nil && c.Events != nil {
+				attachment.EventsMetadata = c.Events
+			}
+		} else {
+			logger.Info("Unknown attachment type", "type", typ.MIME.Value)
+		}
 	}
 
 	return attachment, nil
@@ -601,35 +557,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 func NewDecoder() *mime.WordDecoder {
 	decoder := new(mime.WordDecoder)
 	// attach custom charset decoder
-	decoder.CharsetReader = func(charset string, input io.Reader) (io.Reader, error) {
-		var dec *encoding.Decoder
-		// get proper charset decoder
-		switch charset {
-		case "koi8-r":
-			dec = charmap.KOI8R.NewDecoder()
-		case "windows-1251":
-			dec = charmap.Windows1251.NewDecoder()
-		case "windows-1252":
-			dec = charmap.Windows1252.NewDecoder()
-		case "windows-1258":
-			dec = charmap.Windows1258.NewDecoder()
-		case "iso-8859-15":
-			dec = charmap.ISO8859_15.NewDecoder()
-		default:
-			return nil, fmt.Errorf("unhandled charset %q", charset)
-		}
-		// read input data
-		content, err := ioutil.ReadAll(input)
-		if err != nil {
-			return nil, err
-		}
-		// decode
-		data, err := dec.Bytes(content)
-		if err != nil {
-			return nil, err
-		}
-		return bytes.NewReader(data), nil
-	}
+	decoder.CharsetReader = charset.Reader
 	return decoder
 }
 

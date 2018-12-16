@@ -564,9 +564,6 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			return
 		}
 
-		if len(c.Accepted) == 0 {
-			return
-		}
 		if c.NegotiateFormat("application/json") == "" {
 			return
 		}
@@ -729,10 +726,6 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 		if err != nil {
 			logger.Error("Error pushing HTTP message to collector", "error", err)
 			c.Status(500)
-			return
-		}
-
-		if len(c.Accepted) == 0 {
 			return
 		}
 

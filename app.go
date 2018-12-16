@@ -7,7 +7,6 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"io/ioutil"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -159,6 +158,17 @@ func MakeApp() *cli.App {
 			Usage:  "the RabbitMQ routing key to use to push results to RabbitMQ",
 			EnvVar: "MAILSTATS_RABBITMQ_RESULTS_ROUTING_KEY",
 		},
+		cli.StringFlag{
+			Name: "geoip-database-path",
+			Value: "/var/lib/mailstats/GeoLite2-City/GeoLite2-City.mmdb",
+			Usage: "path to the GeoIP lite database",
+			EnvVar: "MAILSTATS_GEOIP_DATABASE_PATH",
+		},
+		cli.BoolFlag{
+			Name: "geoip",
+			Usage: "enable geolocation of IP addresses",
+			EnvVar: "MAILSTATS_GEOIP",
+		},
 	}
 	app.Version = Version
 	app.Commands = []cli.Command{
@@ -244,6 +254,12 @@ func MakeApp() *cli.App {
 					Value: "imaps://user:pass@example.org:993/INBOX",
 					EnvVar: "MAILSTATS_IMAP_DOWNLOAD_URI",
 				},
+				cli.Uint64Flag{
+					Name: "max",
+					Usage: "Download max massages at most",
+					Value: 0,
+					EnvVar: "MAILSTATS_IMAP_DOWNLOAD_MAX",
+				},
 			},
 			Action: IMAPDownloadAction,
 		},
@@ -263,10 +279,16 @@ func MakeApp() *cli.App {
 		{
 			Name:  "metadata",
 			Usage: "extract metadata from document",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "filename, f",
+					Usage: "File to analyze",
+				},
+			},
 			Action: func(c *cli.Context) error {
 				filename := c.String("filename")
 				if filename == "" {
-					return cli.NewExitError("No filename", 1)
+					return nil
 				}
 				extension := strings.ToLower(filepath.Ext(filename))
 				switch extension {
@@ -315,16 +337,10 @@ func MakeApp() *cli.App {
 				}
 				return nil
 			},
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "filename, f",
-					Usage: "File to analyze",
-				},
-			},
 		},
 		{
-			Name:  "pdftotext",
-			Usage: "convert PDF to text",
+			Name:  "totext",
+			Usage: "Convert document to text",
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:  "filename, f",
@@ -332,12 +348,49 @@ func MakeApp() *cli.App {
 				},
 			},
 			Action: func(c *cli.Context) error {
-				f := strings.TrimSpace(c.String("filename"))
-				if f != "" {
-					content, err := extractors.PDFToText(f)
+				filename := strings.TrimSpace(c.String("filename"))
+				if filename == "" {
+					return nil
+				}
+
+				extension := strings.ToLower(filepath.Ext(filename))
+				switch extension {
+				case ".pdf":
+					content, err := extractors.PDFToText(filename)
 					if err != nil {
 						return cli.NewExitError(err.Error(), 1)
 					}
+					fmt.Println(content)
+				case ".docx", ".docm":
+					content, _, _, err := extractors.ConvertDocx(filename)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					fmt.Println(content)
+				case ".odt":
+					content, _, err := extractors.ConvertODT(filename)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					fmt.Println(content)
+				case ".doc":
+					content, err := extractors.ConvertDoc(filename)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					fmt.Println(content)
+				case ".html":
+					f, err := os.Open(filename)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer f.Close()
+					c, err := ioutil.ReadAll(f)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					content, _, _ := extractors.HTML2Text(string(c))
 					fmt.Println(content)
 				}
 				return nil
@@ -366,6 +419,29 @@ func MakeApp() *cli.App {
 						return cli.NewExitError(err.Error(), 1)
 					}
 					fmt.Println(t.MIME.Value)
+				}
+				return nil
+			},
+		},
+		{
+			Name: "download-geoip",
+			Usage: "Download GeoIP lite database",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "directory, d",
+					Usage: "the destination directory",
+					Value: "/var/lib/mailstats",
+				},
+				cli.StringFlag{
+					Name: "url, u",
+					Usage: "the database URL",
+					Value: utils.GeoIPURL,
+				},
+			},
+			Action: func(c *cli.Context) error {
+				err := utils.DownloadGeoIP(c.String("directory"), c.String("url"))
+				if err != nil {
+					return cli.NewExitError(fmt.Sprintf("Error downloading database: %s", err), 1)
 				}
 				return nil
 			},
@@ -421,7 +497,18 @@ func MakeApp() *cli.App {
 							return cli.NewExitError(err.Error(), 1)
 						}
 					case ".html":
-						// TODO
+						f, err := os.Open(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						//noinspection GoUnhandledErrorResult
+						defer f.Close()
+						c, err := ioutil.ReadAll(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						content, _, _ = extractors.HTML2Text(string(c))
+
 					default:
 						fil, err := os.Open(f)
 						if err != nil {
@@ -439,55 +526,6 @@ func MakeApp() *cli.App {
 					for _, word := range words {
 						fmt.Println(word)
 					}
-				}
-				return nil
-			},
-		},
-		{
-			Name:  "html2text",
-			Usage: "convert a HTML document to text",
-			Flags: []cli.Flag{
-				cli.StringFlag{
-					Name:  "url, u",
-					Usage: "URL to convert",
-				},
-				cli.StringFlag{
-					Name:  "filename, f",
-					Usage: "HTML file to convert",
-				},
-			},
-			Action: func(c *cli.Context) error {
-				f := strings.TrimSpace(c.String("filename"))
-				u := strings.TrimSpace(c.String("url"))
-				content := ""
-				if u != "" {
-					resp, err := http.Get(u)
-					if err != nil {
-						return cli.NewExitError(err.Error(), 1)
-					}
-					defer resp.Body.Close()
-					c, err := ioutil.ReadAll(resp.Body)
-					if err != nil {
-						return cli.NewExitError(err.Error(), 1)
-					}
-					content = string(c)
-				} else if f != "" {
-					fil, err := os.Open(f)
-					if err != nil {
-						return cli.NewExitError(err.Error(), 1)
-					}
-					//noinspection GoUnhandledErrorResult
-					defer fil.Close()
-					c, err := ioutil.ReadAll(fil)
-					if err != nil {
-						return cli.NewExitError(err.Error(), 1)
-					}
-					content = string(c)
-				}
-				content = strings.TrimSpace(content)
-				if content != "" {
-					t, _, _ := html2text(content)
-					fmt.Println(t)
 				}
 				return nil
 			},
