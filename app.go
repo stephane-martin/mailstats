@@ -245,6 +245,19 @@ func MakeApp() *cli.App {
 			Action: MBoxAction,
 		},
 		{
+			Name:  "maildir",
+			Usage: "read a maildir directory",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name:  "directory, d",
+					Usage: "the maildir to read",
+					EnvVar: "MAILSTATS_MAILDIR",
+				},
+			},
+			Action: MaildirAction,
+		},
+
+		{
 			Name:  "imapdownload",
 			Usage: "Read and parse IMAP box",
 			Flags: []cli.Flag{
