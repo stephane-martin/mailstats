@@ -34,9 +34,9 @@ func (c *ChanCollector) Start() error {
 }
 
 func (c *ChanCollector) Push(stop <-chan struct{}, m *models.IncomingMail) error {
-	metrics.M().MailFrom.WithLabelValues(m.MailFrom).Inc()
+	metrics.M().MailFrom.WithLabelValues(m.MailFrom, m.Family).Inc()
 	for _, r := range m.RcptTo {
-		metrics.M().MailTo.WithLabelValues(r).Inc()
+		metrics.M().MailTo.WithLabelValues(r, m.Family).Inc()
 	}
 	m.UID = utils.NewULID()
 	select {

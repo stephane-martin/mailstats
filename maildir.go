@@ -153,7 +153,7 @@ func readDir(ctx context.Context, dir string, collector collectors.Collector, lo
 		}
 		incoming := &models.IncomingMail{
 			BaseInfos: models.BaseInfos{
-				Family:       "mbox",
+				Family:       "maildir",
 				TimeReported: time.Now(),
 			},
 			Data: content,

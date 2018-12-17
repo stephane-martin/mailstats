@@ -40,7 +40,7 @@ func NewCollector(args arguments.Args, logger log15.Logger) (Collector, error) {
 type BaseCollector struct {
 	Cur  *sync.Map
 	Stop chan struct{}
-	// TODO: replace Ch with an unbounded queue
+	// TODO: replace Ch with an unbounded queue?
 	Ch chan *models.IncomingMail
 }
 
@@ -55,11 +55,9 @@ func newBaseCollector(size int) BaseCollector {
 			select {
 			case <-base.Stop:
 				base.Cur.Range(func(k, v interface{}) bool {
-					uid := k.(ulid.ULID)
-					base.Cur.Delete(uid)
-					m := v.(*models.IncomingMail)
-					base.Ch <- m
-					return false
+					base.Cur.Delete(k.(ulid.ULID))
+					base.Ch <- v.(*models.IncomingMail)
+					return true
 				})
 				close(base.Ch)
 				return
@@ -81,12 +79,11 @@ func (c BaseCollector) RePush() {
 		uid := k.(ulid.ULID)
 		if now.Sub(ulid.Time(uid.Time())) >= time.Minute {
 			// not ACKed soon enough, push back
-			c.Cur.Delete(uid)
-			m := v.(*models.IncomingMail)
 			select {
 			case <-c.Stop:
 				return false
-			case c.Ch <- m:
+			case c.Ch <- v.(*models.IncomingMail):
+				c.Cur.Delete(uid)
 			}
 		}
 		return true

@@ -14,15 +14,15 @@ func M() *Metrics {
 	return instance
 }
 
-// TODO: received mail size
-// TODO: parsing time
-
 type Metrics struct {
 	Connections          *prometheus.CounterVec
 	MailFrom             *prometheus.CounterVec
 	MailTo               *prometheus.CounterVec
 	CollectorSize        prometheus.Gauge
 	CollectorPendingSize prometheus.Gauge
+	ParsingDuration      prometheus.Histogram
+	ParsingErrors        *prometheus.CounterVec
+	MessageSize prometheus.Histogram
 	Registry             *prometheus.Registry
 }
 
@@ -31,7 +31,7 @@ func newMetrics() *Metrics {
 
 	m.Connections = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "smtp_connections_total",
+			Name: "connections_total",
 			Help: "Number of SMTP client connections",
 		},
 		[]string{"client_addr", "service"},
@@ -39,18 +39,18 @@ func newMetrics() *Metrics {
 
 	m.MailFrom = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "mail_from",
+			Name: "mail_from_total",
 			Help: "Number of received emails by sender",
 		},
-		[]string{"from"},
+		[]string{"from", "family"},
 	)
 
 	m.MailTo = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "mail_to",
+			Name: "mail_to_total",
 			Help: "Number of received emails by recipient",
 		},
-		[]string{"to"},
+		[]string{"to", "family"},
 	)
 
 	m.CollectorSize = prometheus.NewGauge(
@@ -67,6 +67,29 @@ func newMetrics() *Metrics {
 		},
 	)
 
+	m.ParsingDuration = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "parsing_duration",
+			Help:    "histogram of the duration of message parsing in seconds",
+			Buckets: prometheus.DefBuckets,
+		})
+
+	m.ParsingErrors = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "parsing_errors_total",
+			Help: "The number of parsing errors",
+		},
+		[]string{"family"},
+	)
+
+	m.MessageSize = prometheus.NewHistogram(
+		prometheus.HistogramOpts{
+			Name: "message_size",
+			Help: "histogram of message size in bytes",
+			Buckets: prometheus.ExponentialBuckets(1000, 10, 6),
+		},
+	)
+
 	m.Registry = prometheus.NewRegistry()
 	m.Registry.MustRegister(
 		m.Connections,
@@ -74,6 +97,9 @@ func newMetrics() *Metrics {
 		m.MailTo,
 		m.CollectorSize,
 		m.CollectorPendingSize,
+		m.ParsingDuration,
+		m.ParsingErrors,
+		m.MessageSize,
 	)
 	return m
 }

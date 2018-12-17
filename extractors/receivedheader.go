@@ -10,6 +10,11 @@ import (
 	"time"
 )
 
+// from m0892.contabo.net ([91.194.91.211]:40338 helo=91.194.91.211) by m1363.contabo.net with esmtpsa (TLSv1.2:ECDHE-RSA-AES256-GCM-SHA384:256) (Exim 4.88) (envelope-from <support@contabo.com>) id 1ciAQt-0005YX-7L; Mon, 27 Feb 2017 02:48:59 +0100
+// (envelope-from <newsletter@liberation.cccampaigns.net>)
+// (envelope-from <bounce-md_30850198.5c14c57c.v1-a48f024874c347249d7f5eb681ffab1d@mandrillapp.com>)
+
+
 var receivedHeaderRE = regexp.MustCompile(`(from ([^\s();]+)\s+(\(\s*(([^\s\[]+)?(\s*\[\s*(\S+)\s*][:\d]*\s*)?)\)\s+)?)?by\s+([^\s;]+)(\s+\(([^;)]+\)*)\))?(\s+with\s+([^\s;]+))?(\s+id\s+([^\s;]+))?(\s+\(([^)]+)\))?(\s+for\s+([^\s;]+))?;?(.*?)$`)
 var envelopeRE = regexp.MustCompile(`\(envelope-from (\S+)\)`)
 var heloRE = regexp.MustCompile(`helo=([^\s()[\]]+)`)

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
 	"log"
@@ -217,8 +218,23 @@ type log15Writer struct {
 }
 
 func (w *log15Writer) Write(b []byte) (int, error) {
-	w.logger.Info(string(b))
-	return len(b), nil
+	l := len(b)
+	dolog := w.logger.Info
+	b = bytes.TrimSpace(b)
+	b = bytes.Replace(b, []byte{'\t'}, []byte{' '}, -1)
+	b = bytes.Replace(b, []byte{'"'}, []byte{'\''}, -1)
+	if bytes.HasPrefix(b, []byte("[GIN-debug] ")) {
+		b = b[12:]
+	}
+	if bytes.HasPrefix(b, []byte("[WARNING] ")) {
+		b = b[10:]
+		dolog = w.logger.Warn
+	}
+	lines := bytes.Split(b, []byte{'\n'})
+	for _, line := range lines {
+		dolog(string(line))
+	}
+	return l, nil
 }
 
 func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) error {
@@ -235,6 +251,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 	gin.DefaultErrorWriter = wr
 	log.SetOutput(wr)
 	router := gin.Default()
+
+	workerTimes := &sync.Map{}
 
 	router.Any("/metrics", gin.WrapH(
 		promhttp.HandlerFor(
@@ -393,6 +411,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 					return
 				}
 				c.Data(200, "application/octet-stream", enc)
+				workerTimes.Store(ulid.ULID(work.UID), time.Now())
 				return
 			}
 			if err == context.Canceled {
@@ -410,7 +429,12 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				logger.Warn("Error decoding worker request", "error", err)
 				return
 			}
-			collector.ACK(ulid.MustParse(features.UID))
+			uid := ulid.MustParse(features.UID)
+			if start, ok := workerTimes.Load(uid); ok {
+				metrics.M().ParsingDuration.Observe(time.Now().Sub(start.(time.Time)).Seconds())
+				workerTimes.Delete(uid)
+			}
+			collector.ACK(uid)
 			go func() {
 				err := consumer.Consume(features)
 				if err != nil {
@@ -435,315 +459,341 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 		})
 	}
 
-	router.POST("/messages.mime", func(c *gin.Context) {
-		metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
-		now := time.Now()
+	analyze_mime := func(enqueue bool) func(c *gin.Context) {
+		return func(c *gin.Context) {
+			metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
+			now := time.Now()
 
-		ct := c.ContentType()
-		_, params, err := mime.ParseMediaType(ct)
-		if err != nil {
-			logger.Warn("Error parsing media type", "error", err)
-			c.Status(400)
-			return
-		}
-
-		charset := strings.TrimSpace(params["charset"])
-		if charset == "" {
-			charset = "utf-8"
-		}
-		encoding, err := htmlindex.Get(charset)
-		if err != nil {
-			logger.Warn("Failed to get decoder", "charset", charset)
-			c.Status(500)
-			return
-		}
-		decoder := encoding.NewDecoder()
-		decode := func(s string) string {
-			res, err := decoder.String(s)
+			ct := c.ContentType()
+			_, params, err := mime.ParseMediaType(ct)
 			if err != nil {
-				return s
+				logger.Warn("Error parsing media type", "error", err)
+				c.Status(400)
+				return
 			}
-			return res
-		}
 
-		var message []byte
-		fh, err := c.FormFile("message")
-		if err == http.ErrMissingFile {
-			message = []byte(decode(c.PostForm("message")))
-		} else if err != nil {
-			logger.Warn("Failed to get message part", "error", err)
-			c.Status(500)
-			return
-		} else {
-			f, err := fh.Open()
+			charset := strings.TrimSpace(params["charset"])
+			if charset == "" {
+				charset = "utf-8"
+			}
+			encoding, err := htmlindex.Get(charset)
 			if err != nil {
+				logger.Warn("Failed to get decoder", "charset", charset)
+				c.Status(500)
+				return
+			}
+			decoder := encoding.NewDecoder()
+			decode := func(s string) string {
+				res, err := decoder.String(s)
+				if err != nil {
+					return s
+				}
+				return res
+			}
+
+			var message []byte
+			fh, err := c.FormFile("message")
+			if err == http.ErrMissingFile {
+				message = []byte(decode(c.PostForm("message")))
+			} else if err != nil {
 				logger.Warn("Failed to get message part", "error", err)
 				c.Status(500)
 				return
+			} else {
+				f, err := fh.Open()
+				if err != nil {
+					logger.Warn("Failed to get message part", "error", err)
+					c.Status(500)
+					return
+				}
+				//noinspection GoUnhandledErrorResult
+				defer f.Close()
+				b, err := ioutil.ReadAll(f)
+				if err != nil {
+					logger.Warn("Failed to read message part", "error", err)
+					c.Status(500)
+					return
+				}
+				message = b
 			}
-			//noinspection GoUnhandledErrorResult
-			defer f.Close()
-			b, err := ioutil.ReadAll(f)
-			if err != nil {
-				logger.Warn("Failed to read message part", "error", err)
-				c.Status(500)
+			message = bytes.TrimSpace(message)
+			if len(message) == 0 {
+				logger.Warn("Empty message")
+				c.Status(400)
 				return
 			}
-			message = b
-		}
-		message = bytes.TrimSpace(message)
-		if len(message) == 0 {
-			logger.Warn("Empty message")
-			c.Status(400)
-			return
-		}
 
-		var sender *mail.Address
-		from := strings.TrimSpace(decode(c.PostForm("from")))
-		if len(from) > 0 {
-			s, err := mail.ParseAddress(from)
-			if err == nil {
-				sender = s
-			}
-		}
-
-		recipients := make([]*mail.Address, 0)
-		for _, recipient := range c.PostFormArray("to") {
-			recipientAddr, err := mail.ParseAddress(decode(recipient))
-			if err == nil {
-				recipients = append(recipients, recipientAddr)
-			}
-		}
-
-		parsed, err := mail.ReadMessage(bytes.NewReader(message))
-		if err != nil {
-			logger.Warn("ReadMessage() error", "error", err)
-			c.Status(500)
-			return
-		}
-
-		if sender == nil {
-			from := strings.TrimSpace(parsed.Header.Get("From"))
+			var sender *mail.Address
+			from := strings.TrimSpace(decode(c.PostForm("from")))
 			if len(from) > 0 {
 				s, err := mail.ParseAddress(from)
 				if err == nil {
 					sender = s
 				}
 			}
-		}
 
-		if len(recipients) == 0 {
-			to := parsed.Header["To"]
-			for _, recipient := range to {
-				r, err := mail.ParseAddress(recipient)
+			recipients := make([]*mail.Address, 0)
+			for _, recipient := range c.PostFormArray("to") {
+				recipientAddr, err := mail.ParseAddress(decode(recipient))
 				if err == nil {
-					recipients = append(recipients, r)
+					recipients = append(recipients, recipientAddr)
 				}
 			}
-		}
 
-		infos := &models.IncomingMail{
-			BaseInfos: models.BaseInfos{
-				TimeReported: now,
-				Addr:         c.ClientIP(),
-				Family:       "http",
-				Port:         args.ListenPort,
-			},
-			Data: []byte(message),
-		}
-		if sender != nil {
-			infos.MailFrom = sender.Address
-		}
-		for _, recipient := range recipients {
-			infos.RcptTo = append(infos.RcptTo, recipient.Address)
-		}
-		err = collector.PushCtx(ctx, infos)
-		if err != nil {
-			logger.Error("Error pushing HTTP message to collector", "error", err)
-			c.Status(500)
-			return
-		}
-
-		if c.NegotiateFormat("application/json") == "" {
-			return
-		}
-		parser := NewParser(logger)
-		defer func() { _ = parser.Close() }()
-		features, err := parser.Parse(infos)
-		if err != nil {
-			logger.Warn("Error calculating features", "error", err)
-			c.Status(500)
-			return
-		}
-		c.JSON(200, features)
-	})
-
-	router.POST("/messages", func(c *gin.Context) {
-		metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
-		// cf https://documentation.mailgun.com/en/latest/api-sending
-		now := time.Now()
-		_, params, err := mime.ParseMediaType(c.ContentType())
-		if err != nil {
-			logger.Warn("Error parsing media type", "error", err)
-			c.Status(400)
-			return
-		}
-		charset := strings.TrimSpace(params["charset"])
-		if charset == "" {
-			charset = "utf-8"
-		}
-		encoding, err := htmlindex.Get(charset)
-		if err != nil {
-			logger.Warn("Failed to get decoder", "charset", charset)
-			c.Status(500)
-			return
-		}
-		decoder := encoding.NewDecoder()
-		decode := func(s string) string {
-			res, err := decoder.String(s)
+			parsed, err := mail.ReadMessage(bytes.NewReader(message))
 			if err != nil {
-				return s
+				logger.Warn("ReadMessage() error", "error", err)
+				c.Status(500)
+				return
 			}
-			return res
-		}
 
-		message := gomail.NewMessage(
-			gomail.SetCharset("utf8"),
-			gomail.SetEncoding(gomail.Unencoded),
-		)
-		message.SetHeader("Date", message.FormatDate(now))
-
-		// from, to, cc, bcc, subject, text, html, attachment
-		from := strings.TrimSpace(decode(c.PostForm("from")))
-		if len(from) > 0 {
-			sender, err := mail.ParseAddress(from)
-			if err == nil {
-				from = sender.Address
-				message.SetAddressHeader("From", sender.Address, sender.Name)
-			} else {
-				from = ""
-			}
-		}
-
-		to := make([]*mail.Address, 0)
-		for _, recipient := range c.PostFormArray("to") {
-			recipientAddr, err := mail.ParseAddress(decode(recipient))
-			if err == nil {
-				to = append(to, recipientAddr)
-			}
-		}
-		encodedTo := make([]string, 0)
-		for _, addr := range to {
-			encodedTo = append(encodedTo, message.FormatAddress(addr.Address, addr.Name))
-		}
-		if len(encodedTo) > 0 {
-			message.SetHeader("To", encodedTo...)
-		}
-
-		cc := make([]string, 0)
-		for _, recipient := range c.PostFormArray("cc") {
-			r, err := mail.ParseAddress(decode(recipient))
-			if err == nil {
-				cc = append(cc, message.FormatAddress(r.Address, r.Name))
-			}
-		}
-		if len(cc) > 0 {
-			message.SetHeader("Cc", cc...)
-		}
-
-		bcc := make([]string, 0)
-		for _, recipient := range c.PostFormArray("bcc") {
-			r, err := mail.ParseAddress(decode(recipient))
-			if err == nil {
-				bcc = append(bcc, message.FormatAddress(r.Address, r.Name))
-			}
-		}
-		if len(bcc) > 0 {
-			message.SetHeader("Bcc", bcc...)
-		}
-
-		subject := decode(c.PostForm("subject"))
-		if len(subject) > 0 {
-			message.SetHeader("Subject", subject)
-		}
-
-		text := strings.TrimSpace(decode(c.PostForm("text")))
-		html := strings.TrimSpace(decode(c.PostForm("html")))
-
-		if len(text) > 0 && len(html) > 0 {
-			message.SetBody("text/plain", text)
-			message.AddAlternative("text/html", html)
-		} else if len(text) > 0 {
-			message.SetBody("text/plain", text)
-		} else if len(html) > 0 {
-			message.SetBody("text/html", html)
-		}
-
-		forms, err := c.MultipartForm()
-		if err != nil {
-			logger.Warn("Error parsing multipart", "error", err)
-			c.Status(500)
-			return
-		}
-
-		if forms != nil {
-			for _, fheader := range forms.File["attachment"] {
-				message.Attach(fheader.Filename, gomail.SetCopyFunc(func(w io.Writer) error {
-					f, err := fheader.Open()
-					if err != nil {
-						return err
+			if sender == nil {
+				from := strings.TrimSpace(parsed.Header.Get("From"))
+				if len(from) > 0 {
+					s, err := mail.ParseAddress(from)
+					if err == nil {
+						sender = s
 					}
-					defer func() { _ = f.Close() }()
-					_, err = io.Copy(w, f)
-					return err
-				}))
+				}
 			}
-		}
 
-		var b bytes.Buffer
-		_, err = message.WriteTo(&b)
-		if err != nil {
-			logger.Warn("Error marshalling message to MIME", "error", err)
-			c.Status(500)
-			return
-		}
-		infos := &models.IncomingMail{
-			BaseInfos: models.BaseInfos{
-				TimeReported: now,
-				Addr:         c.ClientIP(),
-				Family:       "http",
-				Port:         args.ListenPort,
-			},
-			Data: b.Bytes(),
-		}
-		if len(from) > 0 {
-			infos.MailFrom = from
-		}
-		for _, addr := range to {
-			infos.RcptTo = append(infos.RcptTo, addr.Address)
-		}
-		err = collector.PushCtx(ctx, infos)
-		if err != nil {
-			logger.Error("Error pushing HTTP message to collector", "error", err)
-			c.Status(500)
-			return
-		}
+			if len(recipients) == 0 {
+				to := parsed.Header["To"]
+				for _, recipient := range to {
+					r, err := mail.ParseAddress(recipient)
+					if err == nil {
+						recipients = append(recipients, r)
+					}
+				}
+			}
 
-		if c.NegotiateFormat("application/json") == "" {
-			return
-		}
+			infos := &models.IncomingMail{
+				BaseInfos: models.BaseInfos{
+					TimeReported: now,
+					Addr:         c.ClientIP(),
+					Family:       "http",
+					Port:         args.ListenPort,
+				},
+				Data: []byte(message),
+			}
+			if sender != nil {
+				infos.MailFrom = sender.Address
+			}
+			for _, recipient := range recipients {
+				infos.RcptTo = append(infos.RcptTo, recipient.Address)
+			}
+			if enqueue {
+				err := collector.PushCtx(ctx, infos)
+				if err != nil {
+					logger.Error("Error pushing HTTP message to collector", "error", err)
+					c.Status(500)
+				}
+				return
+			}
 
-		parser := NewParser(logger)
-		defer func() { _ = parser.Close() }()
-		features, err := parser.Parse(infos)
-		if err != nil {
-			logger.Warn("Error calculating features", "error", err)
-			c.Status(500)
-			return
+			frmt := c.NegotiateFormat("application/json")
+			if frmt == "" {
+				frmt = "application/json"
+			}
+			parser := NewParser(logger)
+			defer func() { _ = parser.Close() }()
+			features, err := parser.Parse(infos)
+			if err != nil {
+				logger.Warn("Error calculating features", "error", err)
+				c.Status(500)
+				return
+			}
+			c.JSON(200, features)
 		}
-		c.JSON(200, features)
+	}
 
-	})
+	router.POST("/messages.mime", analyze_mime(true))
+	router.POST("/analyze.mime", analyze_mime(false))
+
+	analyze := func(enqueue bool) func(c *gin.Context) {
+		return func(c *gin.Context) {
+			metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
+			// cf https://documentation.mailgun.com/en/latest/api-sending
+			now := time.Now()
+			_, params, err := mime.ParseMediaType(c.ContentType())
+			if err != nil {
+				logger.Warn("Error parsing media type", "error", err)
+				c.Status(400)
+				return
+			}
+			charset := strings.TrimSpace(params["charset"])
+			if charset == "" {
+				charset = "utf-8"
+			}
+			encoding, err := htmlindex.Get(charset)
+			if err != nil {
+				logger.Warn("Failed to get decoder", "charset", charset)
+				c.Status(500)
+				return
+			}
+			decoder := encoding.NewDecoder()
+			decode := func(s string) string {
+				res, err := decoder.String(s)
+				if err != nil {
+					return s
+				}
+				return res
+			}
+
+			message := gomail.NewMessage(
+				gomail.SetCharset("utf8"),
+				gomail.SetEncoding(gomail.Unencoded),
+			)
+			message.SetHeader("Date", message.FormatDate(now))
+
+			// from, to, cc, bcc, subject, text, html, attachment
+			from := strings.TrimSpace(decode(c.PostForm("from")))
+			if len(from) > 0 {
+				sender, err := mail.ParseAddress(from)
+				if err == nil {
+					from = sender.Address
+					message.SetAddressHeader("From", sender.Address, sender.Name)
+				} else {
+					from = ""
+				}
+			}
+
+			to := make([]*mail.Address, 0)
+			for _, recipient := range c.PostFormArray("to") {
+				recipientAddr, err := mail.ParseAddress(decode(recipient))
+				if err == nil {
+					to = append(to, recipientAddr)
+				}
+			}
+			encodedTo := make([]string, 0)
+			for _, addr := range to {
+				encodedTo = append(encodedTo, message.FormatAddress(addr.Address, addr.Name))
+			}
+			if len(encodedTo) > 0 {
+				message.SetHeader("To", encodedTo...)
+			}
+
+			cc := make([]string, 0)
+			for _, recipient := range c.PostFormArray("cc") {
+				r, err := mail.ParseAddress(decode(recipient))
+				if err == nil {
+					cc = append(cc, message.FormatAddress(r.Address, r.Name))
+				}
+			}
+			if len(cc) > 0 {
+				message.SetHeader("Cc", cc...)
+			}
+
+			bcc := make([]string, 0)
+			for _, recipient := range c.PostFormArray("bcc") {
+				r, err := mail.ParseAddress(decode(recipient))
+				if err == nil {
+					bcc = append(bcc, message.FormatAddress(r.Address, r.Name))
+				}
+			}
+			if len(bcc) > 0 {
+				message.SetHeader("Bcc", bcc...)
+			}
+
+			subject := decode(c.PostForm("subject"))
+			if len(subject) > 0 {
+				message.SetHeader("Subject", subject)
+			}
+
+			text := strings.TrimSpace(decode(c.PostForm("text")))
+			html := strings.TrimSpace(decode(c.PostForm("html")))
+
+			if len(text) > 0 && len(html) > 0 {
+				message.SetBody("text/plain", text)
+				message.AddAlternative("text/html", html)
+			} else if len(text) > 0 {
+				message.SetBody("text/plain", text)
+			} else if len(html) > 0 {
+				message.SetBody("text/html", html)
+			}
+
+			forms, err := c.MultipartForm()
+			if err != nil {
+				logger.Warn("Error parsing multipart", "error", err)
+				c.Status(500)
+				return
+			}
+
+			if forms != nil {
+				for _, fheader := range forms.File["attachment"] {
+					message.Attach(fheader.Filename, gomail.SetCopyFunc(func(w io.Writer) error {
+						f, err := fheader.Open()
+						if err != nil {
+							return err
+						}
+						defer func() { _ = f.Close() }()
+						_, err = io.Copy(w, f)
+						return err
+					}))
+				}
+			}
+
+			var b bytes.Buffer
+			_, err = message.WriteTo(&b)
+			if err != nil {
+				logger.Warn("Error marshalling message to MIME", "error", err)
+				c.Status(500)
+				return
+			}
+			infos := &models.IncomingMail{
+				BaseInfos: models.BaseInfos{
+					TimeReported: now,
+					Addr:         c.ClientIP(),
+					Family:       "http",
+					Port:         args.ListenPort,
+				},
+				Data: b.Bytes(),
+			}
+			if len(from) > 0 {
+				infos.MailFrom = from
+			}
+			for _, addr := range to {
+				infos.RcptTo = append(infos.RcptTo, addr.Address)
+			}
+			if enqueue {
+				err := collector.PushCtx(ctx, infos)
+				if err != nil {
+					logger.Error("Error pushing HTTP message to collector", "error", err)
+					c.Status(500)
+				}
+				return
+			}
+
+			parser := NewParser(logger)
+			defer func() { _ = parser.Close() }()
+			infos.UID = utils.NewULID()
+			features, err := parser.Parse(infos)
+			if err != nil {
+				logger.Warn("Error calculating features", "error", err)
+				c.Status(500)
+				return
+			}
+			switch c.NegotiateFormat(
+				"application/json",
+				"application/xml",
+				"application/x-yaml",
+				"text/yaml",
+			) {
+			case "application/json":
+				c.JSON(200, features)
+			case "application/xml":
+				c.XML(200, features)
+			case "application/x-yaml", "text/yaml":
+				c.YAML(200, features)
+			default:
+				c.JSON(200, features)
+			}
+
+		}
+	}
+
+	router.POST("/messages", analyze(true))
+	router.POST("/analyze", analyze(false))
 
 	svc := &http.Server{
 		Addr:    net.JoinHostPort(args.ListenAddr, fmt.Sprintf("%d", args.ListenPort)),

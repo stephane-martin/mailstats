@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"github.com/emersion/go-message/charset"
+	"github.com/stephane-martin/mailstats/metrics"
 	"io"
 	"io/ioutil"
 	"mime"
@@ -41,12 +42,6 @@ import (
 )
 
 
-
-// from m0892.contabo.net ([91.194.91.211]:40338 helo=91.194.91.211) by m1363.contabo.net with esmtpsa (TLSv1.2:ECDHE-RSA-AES256-GCM-SHA384:256) (Exim 4.88) (envelope-from <support@contabo.com>) id 1ciAQt-0005YX-7L; Mon, 27 Feb 2017 02:48:59 +0100
-// (envelope-from <newsletter@liberation.cccampaigns.net>)
-// (envelope-from <bounce-md_30850198.5c14c57c.v1-a48f024874c347249d7f5eb681ffab1d@mandrillapp.com>)
-
-
 type Parser interface {
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
 	Close() error
@@ -74,15 +69,26 @@ func (p *ParserImpl) Close() error {
 }
 
 func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
+	now := time.Now()
+	defer func() {
+		if err == nil {
+			metrics.M().ParsingDuration.Observe(time.Now().Sub(now).Seconds())
+		} else {
+			metrics.M().ParsingErrors.WithLabelValues(i.Family).Inc()
+		}
+	}()
+	metrics.M().MessageSize.Observe(float64(len(i.Data)))
+
 	m, err := mail.ReadMessage(bytes.NewReader(i.Data))
 	if err != nil {
+		metrics.M().ParsingErrors.WithLabelValues(i.Family)
 		return nil, err
 	}
 	features = new(models.FeaturesMail)
 	features.BaseInfos = i.BaseInfos
 	uid := ulid.ULID(i.BaseInfos.UID).String()
 	features.UID = uid
-	features.TimeReported = i.TimeReported.Format(time.RFC3339)
+	features.Reported = i.TimeReported.Format(time.RFC3339)
 	features.Headers = make(map[string][]string)
 
 	for k, vl := range m.Header {
@@ -141,14 +147,14 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 
 	if len(plain) > 0 {
 		features.Language = extractors.Language(plain)
-		features.BagOfWords = extractors.BagOfWords(plain, features.Language)
 	}
 
 	if len(features.Language) > 0 {
-		stems := extractors.Stems(features.BagOfWords, features.Language)
-		features.BagOfStems = make(map[string]int)
-		for word := range features.BagOfWords {
-			features.BagOfStems[stems[word]] = features.BagOfStems[stems[word]] + features.BagOfWords[word]
+		bagOfWords := extractors.BagOfWords(plain, features.Language)
+		stems := extractors.Stems(bagOfWords, features.Language)
+		features.BagOfWords = make(map[string]int)
+		for word := range bagOfWords {
+			features.BagOfWords[stems[word]] += bagOfWords[word]
 		}
 		features.Keywords = extractors.Keywords(plain, stems, features.Language)
 	}
@@ -246,7 +252,7 @@ func decodeBody(body io.Reader, charset string, qp string) string {
 			}
 		}
 	}
-	res, err := decodeUtf8(body)
+	res, err := decodeUTF8(body)
 	if err == nil {
 		return res
 	}
@@ -267,7 +273,7 @@ func decodeLatin1(body io.Reader) (string, error) {
 	return string(res), nil
 }
 
-func decodeUtf8(body io.Reader) (string, error) {
+func decodeUTF8(body io.Reader) (string, error) {
 	r := unicode.UTF8.NewDecoder().Reader(body)
 	res, err := ioutil.ReadAll(r)
 	if err != nil {
@@ -339,6 +345,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			logger.Info("NextPart Content-Type parsing", "error", err)
 			continue
 		}
+		subCharset := strings.TrimSpace(subParams["charset"])
 
 		if strings.HasPrefix(subContentType, "message/") {
 			_, subplain, subhtmls, subAttachments := ParsePart(subpart, tool, logger)
@@ -372,12 +379,10 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		fn := strings.TrimSpace(subpart.FileName())
 		if len(fn) == 0 {
 			if subContentType == "text/plain" {
-				subCharset := strings.TrimSpace(subParams["charset"])
 				b := decodeBody(subpart, subCharset, subTransferHeader)
 				plain = plain + b + "\n"
 			}
 			if subContentType == "text/html" {
-				subCharset := strings.TrimSpace(subParams["charset"])
 				htmls = append(htmls, decodeBody(subpart, subCharset, subTransferHeader))
 			}
 			continue
@@ -387,7 +392,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			continue
 		}
 		var subPartReader io.Reader = subpart
-		if subpart.Header.Get("Content-Transfer-Encoding") == "base64" {
+		if subTransferHeader == "base64" {
 			subPartReader = base64.NewDecoder(base64.StdEncoding, subPartReader)
 		}
 		attachment, err := AnalyseAttachment(filename, subPartReader, tool, logger)

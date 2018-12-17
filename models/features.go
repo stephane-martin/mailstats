@@ -6,22 +6,21 @@ import (
 )
 
 type FeaturesMail struct {
-	BaseInfos
-	UID          string              `json:"uid,omitempty"`
-	Size         int                 `json:"size"`
-	ContentType  string              `json:"content_type,omitempty"`
-	TimeReported string              `json:"timereported,omitempty"`
-	Headers      map[string][]string `json:"headers,omitempty"`
-	Attachments  []*Attachment       `json:"attachments,omitempty"`
-	BagOfWords   map[string]int      `json:"bag_of_words,omitempty"`
-	BagOfStems   map[string]int      `json:"bag_of_stems,omitempty"`
-	Keywords     []string            `json:"keywords,omitempty"`
-	Language     string              `json:"language,omitempty"`
-	TimeHeader   string              `json:"time_header,omitempty"`
-	Received     []ReceivedElement   `json:"received,omitempty"`
+	BaseInfos   `yaml:",inline"`
+	UID         string              `json:"uid,omitempty"`
+	Size        int                 `json:"size"`
+	ContentType string              `json:"content_type,omitempty"`
+	Reported    string              `json:"timereported,omitempty"`
+	Headers     map[string][]string `json:"headers,omitempty"`
+	Attachments []*Attachment       `json:"attachments,omitempty"`
+	BagOfWords  map[string]int      `json:"bag_of_words,omitempty"`
+	Keywords    []string            `json:"keywords,omitempty" yaml:",flow"`
+	Language    string              `json:"language,omitempty"`
+	TimeHeader  string              `json:"time_header,omitempty"`
+	Received    []ReceivedElement   `json:"received,omitempty"`
 	// TODO: check that From is consistent/scam
 	From   Address   `json:"from,omitempty"`
-	To     []Address `json:"to,omitempty"`
+	To     []Address `json:"to,omitempty" yaml:",flow"`
 	Title  string    `json:"title,omitempty"`
 	Emails []string  `json:"emails,omitempty"`
 	Urls   []string  `json:"urls,omitempty"`
@@ -90,11 +89,11 @@ type Address struct {
 }
 
 type Event struct {
-	Summary     string
-	Description string
-	Location    string
-	Start       *time.Time
-	End         *time.Time
+	Summary     string     `json:"summary,omitempty"`
+	Description string     `json:"description,omitempty"`
+	Location    string     `json:"location,omitempty"`
+	Start       *time.Time `json:"start,omitempty"`
+	End         *time.Time `json:"end,omitempty"`
 }
 
 type PDFMeta struct {

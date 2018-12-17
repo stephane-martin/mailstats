@@ -117,9 +117,9 @@ func rpush(p pusher, key string, m *models.IncomingMail) error {
 }
 
 func (c *RedisCollector) Push(stop <-chan struct{}, m *models.IncomingMail) error {
-	metrics.M().MailFrom.WithLabelValues(m.MailFrom).Inc()
+	metrics.M().MailFrom.WithLabelValues(m.MailFrom, m.Family).Inc()
 	for _, r := range m.RcptTo {
-		metrics.M().MailTo.WithLabelValues(r).Inc()
+		metrics.M().MailTo.WithLabelValues(r, m.Family).Inc()
 	}
 	return rpush(c.client, c.key, m)
 }

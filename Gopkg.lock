@@ -79,7 +79,7 @@
 
 [[projects]]
   branch = "v1"
-  digest = "1:ae84f7819e298e6566047f73f4ae41fb71549a1ead79aa5c623e8406abbe94da"
+  digest = "1:9d70c708f7aa76564b27d1073fe1c213ce4790d083892e84783f481c93bd1764"
   name = "github.com/emersion/go-imap"
   packages = [
     ".",
@@ -91,7 +91,7 @@
     "utf7",
   ]
   pruneopts = "UT"
-  revision = "9747fff06224070a57247f9fc49cd00ebf5a2d69"
+  revision = "5624370d373684a22740d08438dd4318ad41b9fe"
 
 [[projects]]
   branch = "master"
@@ -592,7 +592,7 @@
     "html/atom",
   ]
   pruneopts = "UT"
-  revision = "610586996380ceef02dd726cc09df7e00a3f8e56"
+  revision = "e147a9138326bc0e9d4e179541ffd8af41cff8a9"
 
 [[projects]]
   branch = "master"
@@ -604,14 +604,14 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:206c5fc6c77857fea5eebcf4ceb2db7272f269428456160589910e50d14244db"
+  digest = "1:ba8cbf57cfd92d5f8592b4aca1a35d92c162363d32aeabd5b12555f8896635e7"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "b05ddf57801d2239d6ab0ee35f9d981e0420f4ac"
+  revision = "4d1cda033e0619309c606fc686de3adcf599539e"
 
 [[projects]]
   branch = "master"
@@ -646,7 +646,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:1d2a5a8d93aee5ab429fa4176de5e8c84b96862cca1bb4feb0513cdf34889d90"
+  digest = "1:5b2be400178fef3ca1cfada246f93548b6384982356d0b6a2705e626a6355911"
   name = "gonum.org/v1/gonum"
   packages = [
     "blas",
@@ -663,7 +663,7 @@
     "mat",
   ]
   pruneopts = "UT"
-  revision = "c64a0a7fc77c800bc460f7214f5953b2e55a7b51"
+  revision = "44a6721e0d61ae419d050c8542f1bea359d5ec24"
 
 [[projects]]
   branch = "v3"
