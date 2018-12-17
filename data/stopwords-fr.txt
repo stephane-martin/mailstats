@@ -57,6 +57,7 @@ ayant
 ayez
 ayons
 basee
+bonjour
 beau
 beaucoup
 bien
@@ -113,6 +114,7 @@ comparables
 compris
 concernant
 contre
+cordialement
 couic
 crac
 dans
@@ -204,6 +206,7 @@ faisaient
 faisant
 fait
 faites
+faut
 façon
 feront
 flac
@@ -222,6 +225,7 @@ fûtes
 gens
 haut
 hein
+hello
 holà
 hormis
 hors

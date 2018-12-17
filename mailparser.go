@@ -233,6 +233,8 @@ func filterPlain(plain string) string {
 func decodeBody(body io.Reader, charset string, qp string) string {
 	if qp == "quoted-printable" {
 		body = quotedprintable.NewReader(body)
+	} else if qp == "base64" {
+		body = base64.NewDecoder(base64.StdEncoding, body)
 	}
 	if charset != "" {
 		encoder, err := htmlindex.Get(charset)
@@ -295,14 +297,14 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		return "", "", nil, nil
 	}
 
-	cset := strings.TrimSpace(params["charset"])
-	qp := strings.ToLower(strings.TrimSpace(msg.Header.Get("Content-Transfer-Encoding")))
+	charSet := strings.TrimSpace(params["charset"])
+	transferEncoding := strings.ToLower(strings.TrimSpace(msg.Header.Get("Content-Transfer-Encoding")))
 	if contentType == "text/plain" {
-		b := decodeBody(msg.Body, cset, qp)
+		b := decodeBody(msg.Body, charSet, transferEncoding)
 		return contentType, b, nil, nil
 	}
 	if contentType == "text/html" {
-		return contentType, "", []string{decodeBody(msg.Body, cset, qp)}, nil
+		return contentType, "", []string{decodeBody(msg.Body, charSet, transferEncoding)}, nil
 	}
 	if !strings.HasPrefix(contentType, "multipart/") {
 		return contentType, "", nil, nil
@@ -324,13 +326,15 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			}
 			continue
 		}
-		subctHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
+		subContentTypeHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
+		subTransferHeader := strings.TrimSpace(subpart.Header.Get("Content-Transfer-Encoding"))
 
-		if len(subctHeader) == 0 {
+		if len(subContentTypeHeader) == 0 {
 			logger.Info("NextPart: no Content-Type")
 			continue
 		}
-		subContentType, subParams, err := mime.ParseMediaType(subctHeader)
+
+		subContentType, subParams, err := mime.ParseMediaType(subContentTypeHeader)
 		if err != nil {
 			logger.Info("NextPart Content-Type parsing", "error", err)
 			continue
@@ -345,7 +349,12 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		}
 
 		if strings.HasPrefix(subContentType, "multipart/") {
-			h := fmt.Sprintf("Content-Type: %s\n\n", subctHeader)
+			h := fmt.Sprintf("Content-Type: %s\n", subContentTypeHeader)
+			if subTransferHeader != "" {
+				h += fmt.Sprintf("Content-Transfer-Encoding: %s\n", subTransferHeader)
+			}
+			h += "\n"
+
 			_, subplain, subhtmls, subAttachments := ParsePart(
 				io.MultiReader(
 					strings.NewReader(h),
@@ -364,12 +373,12 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		if len(fn) == 0 {
 			if subContentType == "text/plain" {
 				subCharset := strings.TrimSpace(subParams["charset"])
-				b := decodeBody(subpart, subCharset, "")
+				b := decodeBody(subpart, subCharset, subTransferHeader)
 				plain = plain + b + "\n"
 			}
 			if subContentType == "text/html" {
 				subCharset := strings.TrimSpace(subParams["charset"])
-				htmls = append(htmls, decodeBody(subpart, subCharset, ""))
+				htmls = append(htmls, decodeBody(subpart, subCharset, subTransferHeader))
 			}
 			continue
 		}
