@@ -20,6 +20,7 @@ type Args struct {
 	Forward   ForwardArgs
 	Collector CollectorArgs
 	Rabbit    RabbitArgs
+	Kafka     KafkaArgs
 	Secret    *memguard.LockedBuffer
 	NbParsers int
 }
@@ -77,6 +78,12 @@ func GetArgs(c *cli.Context) (*Args, error) {
 
 	args.Rabbit.Populate(c)
 	err = args.Rabbit.Verify()
+	if err != nil {
+		return nil, cli.NewExitError(err.Error(), 1)
+	}
+
+	args.Kafka.Populate(c)
+	err = args.Kafka.Verify()
 	if err != nil {
 		return nil, cli.NewExitError(err.Error(), 1)
 	}

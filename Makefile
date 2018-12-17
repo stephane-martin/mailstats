@@ -33,11 +33,11 @@ version:
 
 ${BINARY}_debug: extractors/bindata.go models/incoming_gen.go ${SOURCES}
 	dep ensure
-	go build -x -tags 'netgo osusergo' -o ${BINARY}_debug ${LDFLAGS} ${FULL}
+	CGO_ENABLED=0 go build -x -tags 'netgo osusergo' -o ${BINARY}_debug ${LDFLAGS} ${FULL}
 
 ${BINARY}: extractors/bindata.go models/incoming_gen.go ${SOURCES}
 	dep ensure
-	go build -a -installsuffix nocgo -tags 'netgo osusergo' -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
+	CGO_ENABLED=0 go build -a -installsuffix nocgo -tags 'netgo osusergo' -o ${BINARY} ${LDFLAGS_RELEASE} ${FULL}
 
 retool:
 	go get -u github.com/twitchtv/retool

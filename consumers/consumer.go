@@ -28,6 +28,8 @@ func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
 		return NewHTTPConsumer(args.Consumer)
 	case arguments.Rabbit:
 		return NewRabbitConsumer(args.Rabbit, logger)
+	case arguments.Kafka:
+		return NewKafkaConsumer(args.Kafka.Brokers, args.Kafka.Topic, logger)
 	default:
 		return nil, errors.New("unknown consumer type")
 	}

@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"net"
 	"time"
 )
@@ -25,6 +26,14 @@ type FeaturesMail struct {
 	Emails []string  `json:"emails,omitempty"`
 	Urls   []string  `json:"urls,omitempty"`
 	Images []string  `json:"images,omitempty"`
+}
+
+func (f *FeaturesMail) Encode() ([]byte, error) {
+	b, err := json.Marshal(f)
+	if err != nil {
+		return nil, err
+	}
+	return b, nil
 }
 
 type ReceivedElement struct {

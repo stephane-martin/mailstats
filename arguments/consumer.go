@@ -16,6 +16,7 @@ const (
 	Redis
 	HTTP
 	Rabbit
+	Kafka
 )
 
 var ConsumerTypes = map[string]ConsumerType{
@@ -25,6 +26,7 @@ var ConsumerTypes = map[string]ConsumerType{
 	"redis": Redis,
 	"http": HTTP,
 	"rabbitmq": Rabbit,
+	"kafka": Kafka,
 }
 
 type ConsumerArgs struct {

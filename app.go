@@ -53,7 +53,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "out,o",
 			Value:  "stdout",
-			Usage:  "where to write the results [stdout, stderr, file, redis, syslog, rabbitmq]",
+			Usage:  "where to write the results [stdout, stderr, file, redis, syslog, rabbitmq, kafka]",
 			EnvVar: "MAILSTATS_OUT",
 		},
 		cli.StringFlag{
@@ -168,6 +168,17 @@ func MakeApp() *cli.App {
 			Name: "geoip",
 			Usage: "enable geolocation of IP addresses",
 			EnvVar: "MAILSTATS_GEOIP",
+		},
+		cli.StringSliceFlag{
+			Name: "broker",
+			Usage: "kafka broker, for kafka output (can be specified multiple times)",
+			EnvVar: "MAILSTATS_KAFKA_BROKER",
+		},
+		cli.StringFlag{
+			Name: "topic",
+			Usage: "kafka topic, for kafka output",
+			Value: "mailstats.results",
+			EnvVar: "MAILSTATS_KAFKA_TOPIC",
 		},
 	}
 	app.Version = Version
