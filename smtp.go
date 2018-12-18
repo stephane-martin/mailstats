@@ -24,12 +24,11 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-
-
 type Backend struct {
 	Collector collectors.Collector
 	Stop      <-chan struct{}
 	Logger    log15.Logger
+	Port      int
 }
 
 func (b *Backend) Login(username, password string) (smtp.User, error) {
@@ -38,6 +37,7 @@ func (b *Backend) Login(username, password string) (smtp.User, error) {
 		Collector: b.Collector,
 		Stop:      b.Stop,
 		Logger:    b.Logger,
+		Port:      b.Port,
 	}, nil
 }
 
@@ -47,6 +47,7 @@ func (b *Backend) AnonymousLogin() (smtp.User, error) {
 		Collector: b.Collector,
 		Stop:      b.Stop,
 		Logger:    b.Logger,
+		Port:      b.Port,
 	}, nil
 }
 
@@ -54,6 +55,7 @@ type User struct {
 	Collector collectors.Collector
 	Stop      <-chan struct{}
 	Logger    log15.Logger
+	Port      int
 }
 
 func (u *User) Send(from string, to []string, r io.Reader) error {
@@ -64,13 +66,13 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	}
 	m := &models.IncomingMail{
 		BaseInfos: models.BaseInfos{
-			MailFrom: from,
-			RcptTo: to,
+			MailFrom:     from,
+			RcptTo:       to,
 			TimeReported: time.Now(),
+			Port: u.Port,
 		},
 		Data: b,
 	}
-	// TODO: m.Port = ...
 	return u.Collector.Push(u.Stop, m)
 }
 
@@ -112,7 +114,7 @@ func SMTPAction(c *cli.Context) error {
 
 	g, ctx := errgroup.WithContext(gctx)
 
-	b := &Backend{Collector: collector, Stop: ctx.Done(), Logger: logger}
+	b := &Backend{Collector: collector, Stop: ctx.Done(), Logger: logger, Port: args.SMTP.ListenPort}
 	s := smtp.NewServer(b)
 
 	s.Domain = "localhost"

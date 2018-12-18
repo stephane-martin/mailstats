@@ -114,13 +114,13 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 
 	var b strings.Builder
 	for _, h := range htmls {
-		t, eurls, eimages := extractors.HTML2Text(h)
+		t, eURLs, eImages := extractors.HTML2Text(h)
 		if len(t) > 0 {
 			b.WriteString(t)
 			b.WriteString(".\n")
 		}
-		urls = append(urls, eurls...)
-		images = append(images, eimages...)
+		urls = append(urls, eURLs...)
+		images = append(images, eImages...)
 	}
 	ahtml := strings.TrimSpace(b.String())
 	if len(ahtml) > 0 && (len(ahtml) >= (len(plain)/2)) {
@@ -129,9 +129,9 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 	// unicode normalization
 	plain = utils.Normalize(plain)
 
-	moreurls := xurls.Relaxed().FindAllString(plain, -1)
-	moreurls = append(moreurls, xurls.Relaxed().FindAllString(ahtml, -1)...)
-	for _, u := range moreurls {
+	moreURLs := xurls.Relaxed().FindAllString(plain, -1)
+	moreURLs = append(moreURLs, xurls.Relaxed().FindAllString(ahtml, -1)...)
+	for _, u := range moreURLs {
 		v, err := url.PathUnescape(u)
 		if err == nil {
 			features.Urls = append(features.Urls, v)
@@ -177,10 +177,10 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 	}
 
 	if len(features.Headers["to"]) > 0 {
-		paddrs, err := mail.ParseAddressList(features.Headers["to"][0])
+		pAddrs, err := mail.ParseAddressList(features.Headers["to"][0])
 		if err == nil {
-			for _, paddr := range paddrs {
-				features.To = append(features.To, models.Address(*paddr))
+			for _, pAddr := range pAddrs {
+				features.To = append(features.To, models.Address(*pAddr))
 			}
 		}
 		delete(features.Headers, "to")
@@ -321,7 +321,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 	}
 	mr := multipart.NewReader(msg.Body, boundary)
 	for {
-		subpart, err := mr.NextPart()
+		subPart, err := mr.NextPart()
 		if err == io.EOF {
 			break
 		}
@@ -332,8 +332,8 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			}
 			continue
 		}
-		subContentTypeHeader := strings.TrimSpace(subpart.Header.Get("Content-Type"))
-		subTransferHeader := strings.TrimSpace(subpart.Header.Get("Content-Transfer-Encoding"))
+		subContentTypeHeader := strings.TrimSpace(subPart.Header.Get("Content-Type"))
+		subTransferHeader := strings.TrimSpace(subPart.Header.Get("Content-Transfer-Encoding"))
 
 		if len(subContentTypeHeader) == 0 {
 			logger.Info("NextPart: no Content-Type")
@@ -348,7 +348,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		subCharset := strings.TrimSpace(subParams["charset"])
 
 		if strings.HasPrefix(subContentType, "message/") {
-			_, subplain, subhtmls, subAttachments := ParsePart(subpart, tool, logger)
+			_, subplain, subhtmls, subAttachments := ParsePart(subPart, tool, logger)
 			plain = plain + subplain + "\n"
 			htmls = append(htmls, subhtmls...)
 			attachments = append(attachments, subAttachments...)
@@ -365,7 +365,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			_, subplain, subhtmls, subAttachments := ParsePart(
 				io.MultiReader(
 					strings.NewReader(h),
-					subpart,
+					subPart,
 				),
 				tool,
 				logger,
@@ -376,14 +376,14 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			continue
 		}
 
-		fn := strings.TrimSpace(subpart.FileName())
+		fn := strings.TrimSpace(subPart.FileName())
 		if len(fn) == 0 {
 			if subContentType == "text/plain" {
-				b := decodeBody(subpart, subCharset, subTransferHeader)
+				b := decodeBody(subPart, subCharset, subTransferHeader)
 				plain = plain + b + "\n"
 			}
 			if subContentType == "text/html" {
-				htmls = append(htmls, decodeBody(subpart, subCharset, subTransferHeader))
+				htmls = append(htmls, decodeBody(subPart, subCharset, subTransferHeader))
 			}
 			continue
 		}
@@ -391,11 +391,11 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		if err != nil {
 			continue
 		}
-		var subPartReader io.Reader = subpart
+		var subPartReader io.Reader = subPart
 		if subTransferHeader == "base64" {
 			subPartReader = base64.NewDecoder(base64.StdEncoding, subPartReader)
 		}
-		attachment, err := AnalyseAttachment(filename, subPartReader, tool, logger)
+		attachment, err := AnalyseAttachment(filename, subContentType, subPartReader, tool, logger)
 		if err == nil {
 			attachment.ReportedType = subContentType
 			attachments = append(attachments, attachment)
@@ -404,12 +404,17 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 	return contentType, plain, htmls, attachments
 }
 
-func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifToolWrapper, logger log15.Logger) (*models.Attachment, error) {
-	content, err := ioutil.ReadAll(reader)
+func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.ExifToolWrapper, l log15.Logger) (*models.Attachment, error) {
+	content, err := ioutil.ReadAll(r)
 	if err != nil {
 		return nil, err
 	}
-	attachment := &models.Attachment{Name: filename, Size: uint64(len(content))}
+	attachment := &models.Attachment{
+		Name: filename,
+		Size: uint64(len(content)),
+		ReportedType: ct,
+	}
+
 	h := sha256.Sum256(content)
 	attachment.Hash = hex.EncodeToString(h[:])
 
@@ -418,20 +423,21 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		return nil, err
 	}
 	attachment.InferredType = typ.MIME.Value
-	logger.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
+	attachment.Executable = extractors.IsExecutable(attachment.InferredType)
+	l.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
 
 	switch typ {
 	case matchers.TypePdf:
 		m, err := extractors.PDFBytesInfo(content)
 		if err != nil {
-			logger.Warn("Error extracting metadata from PDF", "error", err)
+			l.Warn("Error extracting metadata from PDF", "error", err)
 		} else {
 			attachment.PDFMetadata = m
 		}
 	case matchers.TypeDocx:
 		text, props, hasMacro, err := extractors.ConvertBytesDocx(content)
 		if err != nil {
-			logger.Warn("Error extracting metadata from DOCX", "error", err)
+			l.Warn("Error extracting metadata from DOCX", "error", err)
 		} else {
 			meta := &models.DocMeta{
 				Properties: props,
@@ -446,7 +452,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 	case utils.OdtType:
 		text, props, err := extractors.ConvertBytesODT(content)
 		if err != nil {
-			logger.Warn("Error extracting metadata from ODT", "error", err)
+			l.Warn("Error extracting metadata from ODT", "error", err)
 		} else {
 			meta := &models.DocMeta{
 				Properties: props,
@@ -461,14 +467,14 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 	case matchers.TypeDoc:
 		text, err := extractors.ConvertBytesDoc(content)
 		if err != nil {
-			logger.Warn("Error extracting text from DOC", "error", err)
+			l.Warn("Error extracting text from DOC", "error", err)
 		} else {
 			meta := &models.DocMeta{
 				Language: extractors.Language(text),
 			}
-			p, err := tool.Extract(content, "-FlashPix:All")
+			p, err := t.Extract(content, "-FlashPix:All")
 			if err != nil {
-				logger.Warn("Error extracting metadata from DOC", "error", err)
+				l.Warn("Error extracting metadata from DOC", "error", err)
 			} else {
 				meta.Properties = p
 			}
@@ -479,28 +485,28 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		}
 
 	case matchers.TypePng:
-		if tool != nil {
-			meta, err := tool.Extract(content, "-EXIF:All", "-PNG:All")
+		if t != nil {
+			meta, err := t.Extract(content, "-EXIF:All", "-PNG:All")
 			if err != nil {
-				logger.Warn("Failed to extract metadata with exiftool", "error", err)
+				l.Warn("Failed to extract metadata with exiftool", "error", err)
 			} else {
 				attachment.ImageMetadata = meta
 			}
 		}
 
 	case matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
-		if tool != nil {
-			meta, err := tool.Extract(content, "-EXIF:All")
+		if t != nil {
+			meta, err := t.Extract(content, "-EXIF:All")
 			if err != nil {
-				logger.Warn("Failed to extract metadata with exiftool", "error", err)
+				l.Warn("Failed to extract metadata with exiftool", "error", err)
 			} else {
 				attachment.ImageMetadata = meta
 			}
 		}
 	case matchers.TypeZip, matchers.TypeTar, matchers.TypeRar:
-		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size, logger)
+		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size, l)
 		if err != nil {
-			logger.Warn("Error analyzing archive", "error", err)
+			l.Warn("Error analyzing archive", "error", err)
 		} else {
 			if attachment.Archives == nil {
 				attachment.Archives = make(map[string]*models.Archive)
@@ -511,16 +517,17 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 	case matchers.TypeGz:
 		gzReader, err := gzip.NewReader(bytes.NewReader(content))
 		if err != nil {
-			logger.Warn("Failed to decompress gzip attachement", "error", err)
+			l.Warn("Failed to decompress gzip attachement", "error", err)
 		} else {
 			if strings.HasSuffix(filename, ".gz") {
 				filename = filename[:len(filename)-3]
 			}
-			subAttachment, err := AnalyseAttachment(filename, gzReader, tool, logger)
+			subAttachment, err := AnalyseAttachment(filename, "", gzReader, t, l)
 			if err != nil {
-				logger.Warn("Error analyzing subattachement", "error", err)
+				l.Warn("Error analyzing subattachement", "error", err)
 			} else {
 				attachment.SubAttachment = subAttachment
+				attachment.Executable = subAttachment.Executable
 			}
 		}
 
@@ -529,26 +536,28 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 		if strings.HasSuffix(filename, ".bz2") {
 			filename = filename[:len(filename)-4]
 		}
-		subAttachment, err := AnalyseAttachment(filename, bz2Reader, tool, logger)
+		subAttachment, err := AnalyseAttachment(filename, "", bz2Reader, t, l)
 		if err != nil {
-			logger.Warn("Error analyzing sub-attachement", "error", err)
+			l.Warn("Error analyzing sub-attachement", "error", err)
 		} else {
 			attachment.SubAttachment = subAttachment
+			attachment.Executable = subAttachment.Executable
 		}
 
 	case matchers.TypeXz:
 		xzReader, err := xz.NewReader(bytes.NewReader(content), 0)
 		if err != nil {
-			logger.Warn("Failed to decompress xz attachement", "error", err)
+			l.Warn("Failed to decompress xz attachement", "error", err)
 		} else {
 			if strings.HasSuffix(filename, ".xz") {
 				filename = filename[:len(filename)-3]
 			}
-			subAttachment, err := AnalyseAttachment(filename, xzReader, tool, logger)
+			subAttachment, err := AnalyseAttachment(filename, "", xzReader, t, l)
 			if err != nil {
-				logger.Warn("Error analyzing subattachement", "error", err)
+				l.Warn("Error analyzing subattachement", "error", err)
 			} else {
 				attachment.SubAttachment = subAttachment
+				attachment.Executable = subAttachment.Executable
 			}
 		}
 
@@ -561,7 +570,7 @@ func AnalyseAttachment(filename string, reader io.Reader, tool *extractors.ExifT
 				attachment.EventsMetadata = c.Events
 			}
 		} else {
-			logger.Info("Unknown attachment type", "type", typ.MIME.Value)
+			l.Info("Unknown attachment type", "type", typ.MIME.Value)
 		}
 	}
 
@@ -599,7 +608,7 @@ func StringDecode(text string) (string, error) {
 }
 
 func ParseMails(ctx context.Context, collector collectors.Collector, parser Parser, consumer consumers.Consumer, forwarder forwarders.Forwarder, nbParsers int, logger log15.Logger) error {
-	g, lctx := errgroup.WithContext(ctx)
+	g, lCtx := errgroup.WithContext(ctx)
 
 	if nbParsers == 0 {
 		<-ctx.Done()
@@ -610,7 +619,7 @@ func ParseMails(ctx context.Context, collector collectors.Collector, parser Pars
 		g.Go(func() error {
 		L:
 			for {
-				incoming, err := collector.PullCtx(lctx)
+				incoming, err := collector.PullCtx(lCtx)
 				if err == context.Canceled {
 					return err
 				}
