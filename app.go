@@ -546,10 +546,14 @@ func MakeApp() *cli.App {
 						}
 						content = string(c)
 					}
-					words := extractors.Keywords(content, nil, l)
+					words, phrases := extractors.Keywords(content, nil, l)
 					for _, word := range words {
 						fmt.Println(word)
 					}
+					for _, phrase := range phrases {
+						fmt.Println(phrase)
+					}
+
 				}
 				return nil
 			},

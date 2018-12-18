@@ -7,6 +7,7 @@ import (
 	"compress/bzip2"
 	"compress/gzip"
 	"errors"
+	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
 	"io"
@@ -99,6 +100,9 @@ LoopFiles:
 			_ = fileReader.Close()
 			continue LoopFiles
 		}
+		if extractors.IsExecutable(t.MIME.Value) {
+			archive.ContainsExecutable = true
+		}
 
 		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
 		if err != nil {
@@ -115,6 +119,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[f.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeRar:
 			subArchive, err := AnalyzeRar(newReader, logger)
@@ -123,6 +130,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[f.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
@@ -133,6 +143,9 @@ LoopFiles:
 						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[f.Name] = subArchive
+					if subArchive.ContainsExecutable {
+						archive.ContainsExecutable = true
+					}
 				}
 			}
 		}
@@ -172,6 +185,9 @@ LoopFiles:
 			logger.Info("Failed to detect file type from RAR archive", "error", err)
 			continue LoopFiles
 		}
+		if extractors.IsExecutable(t.MIME.Value) {
+			archive.ContainsExecutable = true
+		}
 		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
 		if err != nil {
 			logger.Info("Failed to decompress file from RAR archive", "error", err)
@@ -186,6 +202,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeRar:
 			subArchive, err := AnalyzeRar(newReader, logger)
@@ -194,6 +213,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
@@ -204,6 +226,9 @@ LoopFiles:
 						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[header.Name] = subArchive
+					if subArchive.ContainsExecutable {
+						archive.ContainsExecutable = true
+					}
 				}
 			}
 		}
@@ -235,6 +260,9 @@ LoopFiles:
 			logger.Info("Failed to detect file type from TAR archive", "error", err)
 			continue LoopFiles
 		}
+		if extractors.IsExecutable(t.MIME.Value) {
+			archive.ContainsExecutable = true
+		}
 		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
 		if err != nil {
 			logger.Info("Failed to decompress file from TAR archive", "error", err)
@@ -249,6 +277,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeRar:
 			subArchive, err := AnalyzeRar(newReader, logger)
@@ -257,6 +288,9 @@ LoopFiles:
 					archive.SubArchives = make(map[string]*models.Archive)
 				}
 				archive.SubArchives[header.Name] = subArchive
+				if subArchive.ContainsExecutable {
+					archive.ContainsExecutable = true
+				}
 			}
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
@@ -267,6 +301,9 @@ LoopFiles:
 						archive.SubArchives = make(map[string]*models.Archive)
 					}
 					archive.SubArchives[header.Name] = subArchive
+					if subArchive.ContainsExecutable {
+						archive.ContainsExecutable = true
+					}
 				}
 			}
 		}

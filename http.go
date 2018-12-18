@@ -596,7 +596,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				frmt = "application/json"
 			}
 			parser := NewParser(logger)
-			defer func() { _ = parser.Close() }()
+			//noinspection GoUnhandledErrorResult
+			defer parser.Close()
 			features, err := parser.Parse(infos)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
@@ -765,7 +766,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			}
 
 			parser := NewParser(logger)
-			defer func() { _ = parser.Close() }()
+			//noinspection GoUnhandledErrorResult
+			defer parser.Close()
 			infos.UID = utils.NewULID()
 			features, err := parser.Parse(infos)
 			if err != nil {

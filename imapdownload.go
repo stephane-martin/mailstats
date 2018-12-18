@@ -165,6 +165,8 @@ func IMAPDownloadAction(c *cli.Context) error {
 	g, ctx := errgroup.WithContext(gctx)
 
 	parser := NewParser(logger)
+	//noinspection GoUnhandledErrorResult
+	defer parser.Close()
 
 	g.Go(func() error {
 		err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)

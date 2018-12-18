@@ -156,7 +156,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 		for word := range bagOfWords {
 			features.BagOfWords[stems[word]] += bagOfWords[word]
 		}
-		features.Keywords = extractors.Keywords(plain, stems, features.Language)
+		features.Keywords, features.Phrases = extractors.Keywords(plain, stems, features.Language)
 	}
 
 	if len(features.Headers["date"]) > 0 {
@@ -426,6 +426,16 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 	attachment.Executable = extractors.IsExecutable(attachment.InferredType)
 	l.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
 
+	if attachment.Executable {
+		meta, err := t.Extract(content, "-EXE:All")
+		if err != nil {
+			l.Warn("Failed to extract metadata with exiftool", "error", err)
+		} else {
+			attachment.ExeMetadata = meta
+		}
+		return attachment, nil
+	}
+
 	switch typ {
 	case matchers.TypePdf:
 		m, err := extractors.PDFBytesInfo(content)
@@ -445,7 +455,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 				Language:   extractors.Language(text),
 			}
 			if meta.Language != "" {
-				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
 			}
 			attachment.DocMetadata = meta
 		}
@@ -459,7 +469,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 				Language:   extractors.Language(text),
 			}
 			if meta.Language != "" {
-				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
 			}
 			attachment.DocMetadata = meta
 		}
@@ -479,7 +489,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 				meta.Properties = p
 			}
 			if meta.Language != "" {
-				meta.Keywords = extractors.Keywords(text, nil, meta.Language)
+				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
 			}
 			attachment.DocMetadata = meta
 		}

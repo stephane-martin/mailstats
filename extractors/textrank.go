@@ -1,6 +1,7 @@
 package extractors
 
 import (
+	"fmt"
 	"github.com/DavidBelicza/TextRank"
 	"github.com/DavidBelicza/TextRank/rank"
 	"github.com/stephane-martin/mailstats/utils"
@@ -38,7 +39,7 @@ func (l *lang) SetWords(code string, words []string) {
 }
 
 var wordSeparators = []rune{
-	'+', '/', ':', '-', '_', '?', '!', '.', '“', ' ', ',', '\'', '’', '"', ')', '(', '[', ']', '{', '}', '"', ';', '\n', '>', '<', '%', '@', '&', '=', '#',
+	'«', '»', '+', '/', ':', '-', '_', '?', '!', '.', '“', ' ', ',', '\'', '’', '"', ')', '(', '[', ']', '{', '}', '"', ';', '\n', '>', '<', '%', '@', '&', '=', '#',
 }
 var wordsSeparatorsMap map[rune]struct{}
 
@@ -69,10 +70,10 @@ func (r rulet) IsSentenceSeparator(rune rune) bool {
 
 var rule rulet
 
-func TextRank(content string, stems map[string]string, language string) []rank.SingleWord {
+func TextRank(content string, stems map[string]string, language string) ([]rank.SingleWord, []rank.Phrase) {
 	content = strings.TrimSpace(content)
 	if content == "" {
-		return nil
+		return nil, nil
 	}
 	if len(stems) == 0 {
 		stems = Stems(BagOfWords(content, language), language)
@@ -99,22 +100,31 @@ func TextRank(content string, stems map[string]string, language string) []rank.S
 		rule,
 	)
 	tr.Ranking(algo)
-	return textrank.FindSingleWords(tr)
+	return textrank.FindSingleWords(tr), textrank.FindPhrases(tr)
 }
 
-func Keywords(content string, stems map[string]string, language string) []string {
+func Keywords(content string, stems map[string]string, language string) ([]string, []string) {
 	if language == "" {
 		language = Language(content)
 	}
-	tr := TextRank(content, stems, language)
+	trKW, trPh := TextRank(content, stems, language)
 	keywords := make([]string, 0, 10)
+	phrases := make([]string, 0, 10)
 	var nbWords int
-	for _, w := range tr {
+	for _, w := range trKW {
 		keywords = append(keywords, w.Word)
 		nbWords++
 		if nbWords == 10 {
-			return keywords
+			break
 		}
 	}
-	return keywords
+	nbWords = 0
+	for _, ph := range trPh {
+		phrases = append(phrases, fmt.Sprintf("%s/%s", ph.Left, ph.Right))
+		nbWords++
+		if nbWords == 10 {
+			break
+		}
+	}
+	return keywords, phrases
 }

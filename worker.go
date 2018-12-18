@@ -375,6 +375,8 @@ Ping:
 	logger.Info("Worker is authenticated")
 
 	parser := NewParser(logger)
+	//noinspection GoUnhandledErrorResult
+	defer parser.Close()
 
 	ch := make(chan *models.IncomingMail)
 
@@ -440,7 +442,6 @@ Ping:
 	}
 
 	err = g.Wait()
-	_ = parser.Close()
 
 	if err != nil && err != context.Canceled {
 		logger.Info("Worker returned", "error", err)

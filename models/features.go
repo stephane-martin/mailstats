@@ -16,6 +16,7 @@ type FeaturesMail struct {
 	Attachments []*Attachment       `json:"attachments,omitempty"`
 	BagOfWords  map[string]int      `json:"bag_of_words,omitempty"`
 	Keywords    []string            `json:"keywords,omitempty" yaml:",flow"`
+	Phrases     []string            `json:"phrases,omitempty" yaml:",flow"`
 	Language    string              `json:"language,omitempty"`
 	TimeHeader  string              `json:"time_header,omitempty"`
 	Received    []ReceivedElement   `json:"received,omitempty"`
@@ -76,14 +77,15 @@ type GeoIPResult struct {
 }
 
 type Attachment struct {
-	Name           string   `json:"name,omitempty"`
-	InferredType   string   `json:"inferred_type,omitempty"`
-	ReportedType   string   `json:"reported_type,omitempty"`
-	Size           uint64   `json:"size"`
-	Hash           string   `json:"hash,omitempty"`
-	PDFMetadata    *PDFMeta `json:"pdf_metadata,omitempty"`
-	DocMetadata    *DocMeta `json:"doc_metadata,omitempty"`
-	EventsMetadata []*Event `json:"event_metadata,omitempty"`
+	Name           string                 `json:"name,omitempty"`
+	InferredType   string                 `json:"inferred_type,omitempty"`
+	ReportedType   string                 `json:"reported_type,omitempty"`
+	Size           uint64                 `json:"size"`
+	Hash           string                 `json:"hash,omitempty"`
+	PDFMetadata    *PDFMeta               `json:"pdf_metadata,omitempty"`
+	DocMetadata    *DocMeta               `json:"doc_metadata,omitempty"`
+	ExeMetadata    map[string]interface{} `json:"exe_metadata,omitempty"`
+	EventsMetadata []*Event               `json:"event_metadata,omitempty"`
 	// TODO: ImageMetadata should be more defined
 	ImageMetadata map[string]interface{} `json:"image_metadata,omitempty"`
 	Archives      map[string]*Archive    `json:"archive_content,omitempty"`
@@ -128,6 +130,7 @@ type DocMeta struct {
 	HasMacro   bool                   `json:"has_macro"`
 	Language   string                 `json:"language"`
 	Keywords   []string               `json:"keywords"`
+	Phrases    []string               `json:"phrases"`
 	Properties map[string]interface{} `json:"properties"`
 }
 
