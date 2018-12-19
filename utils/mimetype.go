@@ -6,6 +6,8 @@ import (
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/h2non/filetype/types"
+	"gopkg.in/src-d/enry.v1"
+	"gopkg.in/src-d/enry.v1/data"
 	"io"
 	"strings"
 )
@@ -27,7 +29,7 @@ func odtMatcher(buf []byte) bool {
 		string(buf[38:38+len(OdtType.MIME.Value)]) == OdtType.MIME.Value
 }
 
-func GuessReader(reader io.Reader) (types.Type, io.Reader, error) {
+func GuessReader(filename string, reader io.Reader) (types.Type, io.Reader, error) {
 	b := new(bytes.Buffer)
 	b.Grow(8192)
 	buffer := make([]byte, 8192)
@@ -37,11 +39,11 @@ func GuessReader(reader io.Reader) (types.Type, io.Reader, error) {
 		return types.Unknown, reader, err
 	}
 
-	t, err := Guess(buffer)
+	t, err := Guess(filename, buffer)
 	return t, reader, err
 }
 
-func Guess(content []byte) (types.Type, error) {
+func Guess(filename string, content []byte) (types.Type, error) {
 	t, err := filetype.Match(content)
 	if err != nil {
 		return t, err
@@ -59,24 +61,37 @@ func Guess(content []byte) (types.Type, error) {
 		if odtMatcher(content) {
 			return OdtType, nil
 		}
+		mime, ext := mimetype.Detect(content)
+		if t2 := m2f(mime, ext); t2 != types.Unknown {
+			return t2, nil
+		}
+		return t, nil
 	}
-	if t == types.Unknown {
-		t2, ext := mimetype.Detect(content)
-		t3 := m2f(t2, ext)
-		if t3 != types.Unknown {
-			return t3, nil
+	if t != types.Unknown && t != matchers.TypeEot {
+		return t, nil
+	}
+	mime, ext := mimetype.Detect(content)
+	if t2 := m2f(mime, ext); t2 != types.Unknown {
+		return t2, nil
+	}
+	if filename != "" {
+		if langs := getLanguages(filename, content); len(langs) > 0 {
+			if mime, ok := data.LanguagesMime[langs[0]]; ok {
+				if exts := data.ExtensionsByLanguage[langs[0]]; len(exts) > 0 {
+					return m2f(mime, exts[0]), nil
+				}
+			}
+
 		}
 	}
-
-	return t, nil
+	return types.Unknown, nil
 }
 
 func m2f(t, ext string) types.Type {
-	if t == "" {
+	if t == "" || t == "application/octet-stream" || t == "text/plain" {
 		return types.Unknown
 	}
-	f := types.Get(ext)
-	if f != types.Unknown {
+	if f := types.Get(ext); f != types.Unknown {
 		return f
 	}
 	parts := strings.SplitN(t, "/", 2)
@@ -88,4 +103,22 @@ func m2f(t, ext string) types.Type {
 			Value:   t,
 		},
 	}
+}
+
+
+func getLanguages(filename string, content []byte) []string {
+	var languages []string
+	var candidates []string
+	for _, strategy := range enry.DefaultStrategies {
+		languages = strategy(filename, content, candidates)
+		if len(languages) == 1 {
+			return languages
+		}
+
+		if len(languages) > 0 {
+			candidates = append(candidates, languages...)
+		}
+	}
+
+	return languages
 }

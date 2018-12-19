@@ -170,6 +170,14 @@
     name = "github.com/Shopify/sarama"
     version = "1.20.0"
 
+[[constraint]]
+    name = "github.com/alecthomas/chroma"
+    version = "0.6.0"
+
+[[constraint]]
+    name = "gopkg.in/src-d/enry.v1"
+    version = "1.6.7"
+
 [prune]
 	go-tests = true
 	unused-packages = true

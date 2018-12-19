@@ -438,7 +438,7 @@ func MakeApp() *cli.App {
 					}
 					//noinspection GoUnhandledErrorResult
 					defer f.Close()
-					t, _, err := utils.GuessReader(f)
+					t, _, err := utils.GuessReader(fname, f)
 					if err != nil {
 						return cli.NewExitError(err.Error(), 1)
 					}

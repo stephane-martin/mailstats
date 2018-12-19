@@ -47,6 +47,47 @@
   version = "v3.0.0"
 
 [[projects]]
+  digest = "1:bb9a12729bb4b84e37787675f48de96f2e2c60d9a771af7f98155c4205c24d51"
+  name = "github.com/alecthomas/chroma"
+  packages = [
+    ".",
+    "formatters",
+    "formatters/html",
+    "lexers",
+    "lexers/a",
+    "lexers/b",
+    "lexers/c",
+    "lexers/circular",
+    "lexers/d",
+    "lexers/e",
+    "lexers/f",
+    "lexers/g",
+    "lexers/h",
+    "lexers/i",
+    "lexers/internal",
+    "lexers/j",
+    "lexers/k",
+    "lexers/l",
+    "lexers/m",
+    "lexers/n",
+    "lexers/o",
+    "lexers/p",
+    "lexers/q",
+    "lexers/r",
+    "lexers/s",
+    "lexers/t",
+    "lexers/v",
+    "lexers/w",
+    "lexers/x",
+    "lexers/y",
+    "quick",
+    "styles",
+  ]
+  pruneopts = "UT"
+  revision = "5a473179cfe450c6d80407452c241428de387f6b"
+  version = "v0.6.0"
+
+[[projects]]
   digest = "1:47fd1237abeac1246a1e690f3c6c8e8c5b963b5bf946be4f9c8210453a502a11"
   name = "github.com/awnumar/memguard"
   packages = [
@@ -86,6 +127,14 @@
   version = "v0.2"
 
 [[projects]]
+  branch = "master"
+  digest = "1:710109527a119c813d4fac773712dd92f449ed7c2f7b81f49822f94d290c8f72"
+  name = "github.com/danwakefield/fnmatch"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "cbb64ac3d964b81592e64f957ad53df015803288"
+
+[[projects]]
   digest = "1:ffe9824d294da03b391f44e1ae8281281b4afc1bdaa9588c9097785e3af10cec"
   name = "github.com/davecgh/go-spew"
   packages = ["spew"]
@@ -100,6 +149,17 @@
   pruneopts = "UT"
   revision = "cbaa98ba5575e67703b32b4b19f73c91f3c4159e"
   version = "v1.7.1"
+
+[[projects]]
+  digest = "1:72dc2b6056e7097f829260e4a2ff08d32fec6017df1982a66e110ab4128486f8"
+  name = "github.com/dlclark/regexp2"
+  packages = [
+    ".",
+    "syntax",
+  ]
+  pruneopts = "UT"
+  revision = "487489b64fb796de2e55f4e8a4ad1e145f80e957"
+  version = "v1.1.6"
 
 [[projects]]
   digest = "1:1f0c7ab489b407a7f8f9ad16c25a504d28ab461517a971d341388a56156c1bd7"
@@ -398,6 +458,14 @@
   version = "0.3.0"
 
 [[projects]]
+  digest = "1:b8a91524c7e262bcf2fde6e6bdcebfcaa6450ad073af6df6301fd5f6c32a838b"
+  name = "github.com/moovweb/rubex"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "cb849acea6148000db8a55743f71476b0897ea41"
+  version = "6.3.107"
+
+[[projects]]
   branch = "master"
   digest = "1:bb1fc4f42f344d96598e9bac81434b7d89032ae0b323aa632d9adc41b3477dc4"
   name = "github.com/mostlygeek/go-exiftool"
@@ -594,6 +662,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:2699f40ea73866f38eccb385738750a71a05cec654f029e78f620caccefd85e4"
+  name = "github.com/toqueteos/trie"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "56fed4a05683322f125e2d78ee269bb102280392"
+
+[[projects]]
+  branch = "master"
   digest = "1:c476b395b8404b7aff516638ddcebbf09a4f0ce1830c96316344ebe7bce2ed65"
   name = "github.com/tscholl2/siec"
   packages = ["."]
@@ -757,6 +833,27 @@
   version = "v1.0.6"
 
 [[projects]]
+  digest = "1:bdce03a1ad3dbb484e748b871f7069cefe3a8e111296e494a58bc7145cfa112e"
+  name = "gopkg.in/src-d/enry.v1"
+  packages = [
+    ".",
+    "data",
+    "internal/tokenizer",
+    "regex",
+  ]
+  pruneopts = "UT"
+  revision = "8953e0e19a9a08c69113f672fbd89f6082b379d5"
+  version = "v1.6.7"
+
+[[projects]]
+  digest = "1:98e121dbd49eb03c58bd8ef3b76322b2fdc3676cf11fa0084bb17ff01b2aa704"
+  name = "gopkg.in/toqueteos/substring.v1"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "c5f61671513240ddf5563635cc4a90e9f3ae4710"
+  version = "v1.0.2"
+
+[[projects]]
   digest = "1:4d2e5a73dc1500038e504a8d78b986630e3626dc027bc030ba5c75da257cdb96"
   name = "gopkg.in/yaml.v2"
   packages = ["."]
@@ -773,6 +870,7 @@
     "github.com/Shopify/sarama",
     "github.com/abadojack/whatlanggo",
     "github.com/ahmetb/go-linq",
+    "github.com/alecthomas/chroma/quick",
     "github.com/awnumar/memguard",
     "github.com/blabber/mbox",
     "github.com/chrisport/go-lang-detector/langdet",
@@ -821,6 +919,8 @@
     "golang.org/x/text/encoding/htmlindex",
     "golang.org/x/text/encoding/unicode",
     "golang.org/x/text/unicode/norm",
+    "gopkg.in/src-d/enry.v1",
+    "gopkg.in/src-d/enry.v1/data",
   ]
   solver-name = "gps-cdcl"
   solver-version = 1

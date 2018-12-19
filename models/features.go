@@ -29,12 +29,12 @@ type FeaturesMail struct {
 	Images []string  `json:"images,omitempty"`
 }
 
-func (f *FeaturesMail) Encode() ([]byte, error) {
-	b, err := json.Marshal(f)
-	if err != nil {
-		return nil, err
+func (f *FeaturesMail) Encode(indent bool) ([]byte, error) {
+	if indent {
+		return json.MarshalIndent(f, "", "  ")
+	} else {
+		return json.Marshal(f)
 	}
-	return b, nil
 }
 
 type ReceivedElement struct {

@@ -418,7 +418,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 	h := sha256.Sum256(content)
 	attachment.Hash = hex.EncodeToString(h[:])
 
-	typ, err := utils.Guess(content)
+	typ, err := utils.Guess(filename, content)
 	if err != nil {
 		return nil, err
 	}

@@ -13,6 +13,8 @@ type ExifToolWrapper struct {
 }
 
 
+// TODO: run exiftool in sandbox
+
 func NewExifToolWrapper() (*ExifToolWrapper, error) {
 	path, err := exec.LookPath("exiftool")
 	if err != nil {

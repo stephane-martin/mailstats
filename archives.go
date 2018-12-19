@@ -21,6 +21,8 @@ import (
 	"github.com/xi2/xz"
 )
 
+// TODO: refactor
+
 func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size uint64, logger log15.Logger) (*models.Archive, error) {
 	switch typ {
 	case matchers.TypeZip:
@@ -42,7 +44,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		if err != nil {
 			return oldType, nil, "", err
 		}
-		newt, newr, err := utils.GuessReader(r)
+		newt, newr, err := utils.GuessReader("", r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "gzip", nil
@@ -50,7 +52,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		return newt, newr, "gzip", nil
 	case matchers.TypeBz2:
 		r := bzip2.NewReader(oldReader)
-		newt, newr, err := utils.GuessReader(r)
+		newt, newr, err := utils.GuessReader("", r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "bzip2", nil
@@ -61,7 +63,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 		if err != nil {
 			return oldType, nil, "", err
 		}
-		newt, newr, err := utils.GuessReader(r)
+		newt, newr, err := utils.GuessReader("", r)
 		if err != nil {
 			logger.Info("Failed to determine inner type of compressed file in archive", "error", err)
 			return oldType, newr, "xz", nil
@@ -94,7 +96,7 @@ LoopFiles:
 			logger.Warn("Error reading file from ZIP", "error", err)
 			continue LoopFiles
 		}
-		t, newReader, err := utils.GuessReader(fileReader)
+		t, newReader, err := utils.GuessReader(f.Name, fileReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from ZIP archive", "error", err)
 			_ = fileReader.Close()
@@ -162,6 +164,7 @@ func AnalyzeRar(reader io.Reader, logger log15.Logger) (*models.Archive, error) 
 	}
 	archive := new(models.Archive)
 	archive.ArchiveType = "rar"
+
 LoopFiles:
 	for {
 		header, err := rarReader.Next()
@@ -180,7 +183,7 @@ LoopFiles:
 			continue LoopFiles
 		}
 
-		t, newReader, err := utils.GuessReader(rarReader)
+		t, newReader, err := utils.GuessReader(header.Name, rarReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from RAR archive", "error", err)
 			continue LoopFiles
@@ -255,7 +258,7 @@ LoopFiles:
 		if header.Typeflag != tar.TypeReg {
 			continue LoopFiles
 		}
-		t, newReader, err := utils.GuessReader(tarReader)
+		t, newReader, err := utils.GuessReader(header.Name, tarReader)
 		if err != nil {
 			logger.Info("Failed to detect file type from TAR archive", "error", err)
 			continue LoopFiles

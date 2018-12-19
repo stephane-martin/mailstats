@@ -46,7 +46,7 @@ func NewKafkaConsumer(brokers []string, topic string, logger log15.Logger) (*Kaf
 }
 
 func (c *KafkaConsumer) Consume(features *models.FeaturesMail) error {
-	b, err := features.Encode()
+	b, err := features.Encode(false)
 	if err != nil {
 		return err
 	}

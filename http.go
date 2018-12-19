@@ -26,6 +26,7 @@ import (
 	"github.com/stephane-martin/mailstats/metrics"
 	"github.com/stephane-martin/mailstats/models"
 
+	"github.com/alecthomas/chroma/quick"
 	"github.com/awnumar/memguard"
 	"github.com/gin-gonic/gin"
 	"github.com/go-gomail/gomail"
@@ -459,7 +460,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 		})
 	}
 
-	analyze_mime := func(enqueue bool) func(c *gin.Context) {
+	analyzeMime := func(enqueue bool) func(c *gin.Context) {
 		return func(c *gin.Context) {
 			metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
 			now := time.Now()
@@ -591,25 +592,22 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				return
 			}
 
-			frmt := c.NegotiateFormat("application/json")
-			if frmt == "" {
-				frmt = "application/json"
-			}
 			parser := NewParser(logger)
 			//noinspection GoUnhandledErrorResult
 			defer parser.Close()
+			infos.UID = utils.NewULID()
 			features, err := parser.Parse(infos)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
 				c.Status(500)
 				return
 			}
-			c.JSON(200, features)
+			printFeatures(features, c, logger)
 		}
 	}
 
-	router.POST("/messages.mime", analyze_mime(true))
-	router.POST("/analyze.mime", analyze_mime(false))
+	router.POST("/messages.mime", analyzeMime(true))
+	router.POST("/analyze.mime", analyzeMime(false))
 
 	analyze := func(enqueue bool) func(c *gin.Context) {
 		return func(c *gin.Context) {
@@ -775,21 +773,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				c.Status(500)
 				return
 			}
-			switch c.NegotiateFormat(
-				"application/json",
-				"application/xml",
-				"application/x-yaml",
-				"text/yaml",
-			) {
-			case "application/json":
-				c.JSON(200, features)
-			case "application/xml":
-				c.XML(200, features)
-			case "application/x-yaml", "text/yaml":
-				c.YAML(200, features)
-			default:
-				c.JSON(200, features)
-			}
+			printFeatures(features, c, logger)
+
 
 		}
 	}
@@ -816,4 +801,34 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 	}
 	return err
 
+}
+
+
+func printFeatures(features *models.FeaturesMail, c *gin.Context, logger log15.Logger) {
+	switch c.NegotiateFormat(
+		"application/json",
+		"text/html",
+		"application/x-yaml",
+		"text/yaml",
+	) {
+	case "application/json":
+		c.JSON(200, features)
+	case "text/html":
+		b, err := features.Encode(true)
+		if err != nil {
+			logger.Warn("Failed to serialize features", "error", err)
+			c.Status(500)
+			return
+		}
+		err = quick.Highlight(c.Writer, string(b), "json", "html", "colorful")
+		if err != nil {
+			logger.Warn("Failed to colorize features", "error", err)
+			c.Status(500)
+			return
+		}
+	case "application/x-yaml", "text/yaml":
+		c.YAML(200, features)
+	default:
+		c.JSON(200, features)
+	}
 }
