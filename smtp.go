@@ -101,6 +101,15 @@ func SMTPAction(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
 	}
 
+	if args.GeoIP.Enabled {
+		err := utils.InitGeoIP(args.GeoIP.DatabasePath)
+		if err != nil {
+			return cli.NewExitError(fmt.Sprintf("Error loading GeoIP database: %s", err), 1)
+		}
+		//noinspection GoUnhandledErrorResult
+		defer utils.CloseGeoIP()
+	}
+
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
 	gctx, cancel := context.WithCancel(context.Background())

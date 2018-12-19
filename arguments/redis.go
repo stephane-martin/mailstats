@@ -16,7 +16,7 @@ type RedisArgs struct {
 	CollectorKey string
 }
 
-func (args RedisArgs) Verify() error {
+func (args *RedisArgs) Verify() error {
 	v := verifier.New()
 	if args.URL != "" {
 		u, err := url.Parse(args.URL)
@@ -36,17 +36,12 @@ func (args RedisArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *RedisArgs) Populate(c *cli.Context) *RedisArgs {
-	if args == nil {
-		args = new(RedisArgs)
-	}
+func (args *RedisArgs) Populate(c *cli.Context) {
 	args.URL = strings.TrimSpace(c.GlobalString("redis-url"))
 	args.ResultsKey = strings.TrimSpace(c.GlobalString("redis-results-key"))
 	args.CollectorKey = strings.TrimSpace(c.GlobalString("redis-collector-key"))
 	if args.CollectorKey == "" {
 		args.CollectorKey = "mailstats.collector"
 	}
-
-	return args
 }
 

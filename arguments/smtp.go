@@ -15,7 +15,7 @@ type SMTPArgs struct {
 	Inetd          bool
 }
 
-func (args SMTPArgs) Verify() error {
+func (args *SMTPArgs) Verify() error {
 	v := verifier.New()
 	v.That(args.ListenPort > 0, "The listen port must be positive")
 	v.That(len(args.ListenAddr) > 0, "The listen address is empty")
@@ -26,10 +26,7 @@ func (args SMTPArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
-	if args == nil {
-		args = new(SMTPArgs)
-	}
+func (args *SMTPArgs) Populate(c *cli.Context) {
 	args.ListenPort = c.Int("lport")
 	if args.ListenPort == 0 {
 		args.ListenPort = 3333
@@ -41,6 +38,5 @@ func (args *SMTPArgs) Populate(c *cli.Context) *SMTPArgs {
 	args.MaxMessageSize = c.Int("max-size")
 	args.MaxIdle = c.Int("max-idle")
 	args.Inetd = c.GlobalBool("inetd")
-	return args
 }
 

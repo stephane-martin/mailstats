@@ -14,16 +14,12 @@ type LoggingArgs struct {
 	Syslog bool
 }
 
-func (args *LoggingArgs) Populate(c *cli.Context) *LoggingArgs {
-	if args == nil {
-		args = new(LoggingArgs)
-	}
+func (args *LoggingArgs) Populate(c *cli.Context) {
 	args.LogLevel = strings.ToLower(strings.TrimSpace(c.GlobalString("loglevel")))
 	args.Syslog = c.GlobalBool("syslog")
-	return args
 }
 
-func (args LoggingArgs) Verify() error {
+func (args *LoggingArgs) Verify() error {
 	v := verifier.New()
 	v.That(len(args.LogLevel) > 0, "loglevel is empty")
 	return v.GetError()

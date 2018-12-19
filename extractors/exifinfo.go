@@ -27,34 +27,39 @@ func NewExifToolWrapper() (*ExifToolWrapper, error) {
 	return &ExifToolWrapper{tool: t}, nil
 }
 
-func (w *ExifToolWrapper) ExtractFromFile(filename string, flags ...string) (map[string]interface{}, error) {
+func (w *ExifToolWrapper) ExtractFromFile(filename string, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
 	res, err := w.tool.ExtractFlags(filename, flags...)
 	if err != nil {
 		return nil, err
 	}
-	results := make(map[string]interface{})
 	attributes := make([]map[string]interface{}, 0)
 	err = json.Unmarshal(res, &attributes)
 	if err != nil {
 		return nil, err
 	}
 	if len(attributes) == 0 {
-		return results, nil
+		return meta, nil
 	}
 	delete(attributes[0], "SourceFile")
-	for k, v := range attributes[0] {
-		results[utils.Snake(k)] = v
+	if meta == nil {
+		meta = make(map[string]interface{})
 	}
-	return results, nil
+	for k, v := range attributes[0] {
+		meta[utils.Snake(k)] = v
+	}
+	return meta, nil
 }
 
-func (w *ExifToolWrapper) Extract(content []byte, flags ...string) (meta map[string]interface{}, err error) {
+func (w *ExifToolWrapper) Extract(content []byte, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
 	temp, err := utils.NewTempFile(content)
 	if err != nil {
 		return nil, err
 	}
-	_ = temp.RemoveAfter(func(name string) error {
-		meta, err = w.ExtractFromFile(name, flags...)
+	if meta == nil {
+		meta = make(map[string]interface{})
+	}
+	err = temp.RemoveAfter(func(name string) error {
+		_, err := w.ExtractFromFile(name, meta, flags...)
 		return err
 	})
 	return meta, err

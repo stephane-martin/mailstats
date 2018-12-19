@@ -11,7 +11,7 @@ type KafkaArgs struct {
 	Topic string
 }
 
-func (args KafkaArgs) Verify() error {
+func (args *KafkaArgs) Verify() error {
 	v := verifier.New()
 	for _, broker := range args.Brokers {
 		_, _, err := net.SplitHostPort(broker)
@@ -20,12 +20,7 @@ func (args KafkaArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *KafkaArgs) Populate(c *cli.Context) *KafkaArgs {
-	if args == nil {
-		args = new(KafkaArgs)
-	}
+func (args *KafkaArgs) Populate(c *cli.Context) {
 	args.Brokers = c.GlobalStringSlice("broker")
 	args.Topic = c.GlobalString("topic")
-	return args
-
 }

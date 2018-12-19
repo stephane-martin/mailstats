@@ -61,8 +61,8 @@ func IMAPDownloadAction(c *cli.Context) error {
 		maxDownloads = math.MaxUint32
 	}
 
-	if c.GlobalBool("geoip") {
-		err := utils.InitGeoIP(c.GlobalString("geoip-database-path"))
+	if args.GeoIP.Enabled {
+		err := utils.InitGeoIP(args.GeoIP.DatabasePath)
 		if err != nil {
 			return cli.NewExitError(fmt.Sprintf("Error loading GeoIP database: %s", err), 1)
 		}

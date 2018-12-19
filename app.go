@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/russross/blackfriday"
 	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -317,7 +319,7 @@ func MakeApp() *cli.App {
 				extension := strings.ToLower(filepath.Ext(filename))
 				switch extension {
 				case ".pdf":
-					meta, err := extractors.PDFInfo(filename)
+					meta, err := extractors.PDFInfo(filename, nil)
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
@@ -341,7 +343,7 @@ func MakeApp() *cli.App {
 					}
 					//noinspection GoUnhandledErrorResult
 					defer tool.Close()
-					meta, err := tool.ExtractFromFile(filename, "-FlashPix:All")
+					meta, err := tool.ExtractFromFile(filename, nil,"-FlashPix:All")
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
@@ -353,7 +355,7 @@ func MakeApp() *cli.App {
 					}
 					//noinspection GoUnhandledErrorResult
 					defer tool.Close()
-					meta, err := tool.ExtractFromFile(filename, "-EXIF:All")
+					meta, err := tool.ExtractFromFile(filename, nil, "-EXIF:All")
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
@@ -416,6 +418,14 @@ func MakeApp() *cli.App {
 					}
 					content, _, _ := extractors.HTML2Text(string(c))
 					fmt.Println(content)
+				case ".md":
+					f, err := os.Open(filename)
+					if err != nil {
+						return cli.NewExitError(err.Error(), 1)
+					}
+					//noinspection GoUnhandledErrorResult
+					defer f.Close()
+					_, _ = io.Copy(os.Stdout, f)
 				}
 				return nil
 			},
@@ -532,6 +542,20 @@ func MakeApp() *cli.App {
 							return cli.NewExitError(err.Error(), 1)
 						}
 						content, _, _ = extractors.HTML2Text(string(c))
+
+					case ".md":
+						f, err := os.Open(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						//noinspection GoUnhandledErrorResult
+						defer f.Close()
+						c, err := ioutil.ReadAll(f)
+						if err != nil {
+							return cli.NewExitError(err.Error(), 1)
+						}
+						html := string(blackfriday.Run(c))
+						content, _, _ = extractors.HTML2Text(html)
 
 					default:
 						fil, err := os.Open(f)

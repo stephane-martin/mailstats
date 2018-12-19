@@ -19,17 +19,14 @@ var collectorsMap = map[string]struct{}{
 	"rabbitmq": struct{}{},
 }
 
-func (args CollectorArgs) Verify() error {
+func (args *CollectorArgs) Verify() error {
 	v := verifier.New()
 	_, ok := collectorsMap[args.Collector]
 	v.That(ok, "Unknown collector type")
 	return v.GetError()
 }
 
-func (args *CollectorArgs) Populate(c *cli.Context) *CollectorArgs {
-	if args == nil {
-		args = new(CollectorArgs)
-	}
+func (args *CollectorArgs) Populate(c *cli.Context) {
 	args.Collector = strings.ToLower(c.GlobalString("collector"))
 	if args.Collector == "" {
 		args.Collector = "channel"
@@ -44,5 +41,4 @@ func (args *CollectorArgs) Populate(c *cli.Context) *CollectorArgs {
 	if args.CollectorSize <= 0 {
 		args.CollectorSize = 10000
 	}
-	return args
 }

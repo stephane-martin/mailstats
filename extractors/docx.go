@@ -108,7 +108,7 @@ func ConvertBytesDocx(b []byte) (content string, props map[string]interface{}, h
 			footerFull += footer + "\n"
 		}
 	}
-	content = headerFull + "\n" + textBody + "\n" + footerFull
+	content = strings.TrimSpace(headerFull + "\n" + textBody + "\n" + footerFull)
 	return
 }
 
@@ -178,7 +178,7 @@ func XMLToText(r io.Reader, breaks []string, skip []string, strict bool) (string
 			}
 		}
 	}
-	return result, nil
+	return strings.TrimSpace(result), nil
 }
 
 

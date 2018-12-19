@@ -26,7 +26,7 @@ func (args ForwardArgs) Parsed() (scheme, host, port, username, password string)
 		strings.TrimSpace(password)
 }
 
-func (args ForwardArgs) Verify() error {
+func (args *ForwardArgs) Verify() error {
 	if args.URL == "" {
 		return nil
 	}
@@ -43,10 +43,9 @@ func (args ForwardArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *ForwardArgs) Populate(c *cli.Context) *ForwardArgs {
+func (args *ForwardArgs) Populate(c *cli.Context) {
 	if args == nil {
 		args = new(ForwardArgs)
 	}
 	args.URL = strings.TrimSpace(c.GlobalString("forward"))
-	return args
 }

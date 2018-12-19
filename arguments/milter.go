@@ -13,7 +13,7 @@ type MilterArgs struct {
 	Inetd      bool
 }
 
-func (args MilterArgs) Verify() error {
+func (args *MilterArgs) Verify() error {
 	v := verifier.New()
 	v.That(args.ListenPort > 0, "The listen port must be positive")
 	v.That(len(args.ListenAddr) > 0, "The listen address is empty")
@@ -22,10 +22,7 @@ func (args MilterArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *MilterArgs) Populate(c *cli.Context) *MilterArgs {
-	if args == nil {
-		args = new(MilterArgs)
-	}
+func (args *MilterArgs) Populate(c *cli.Context) {
 	args.ListenPort = c.Int("lport")
 	if args.ListenPort == 0 {
 		args.ListenPort = 3333
@@ -35,5 +32,4 @@ func (args *MilterArgs) Populate(c *cli.Context) *MilterArgs {
 		args.ListenAddr = "127.0.0.1"
 	}
 	args.Inetd = c.GlobalBool("inetd")
-	return args
 }

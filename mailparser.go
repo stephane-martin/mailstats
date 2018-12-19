@@ -33,6 +33,7 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/xi2/xz"
 	"golang.org/x/sync/errgroup"
+	"github.com/russross/blackfriday"
 
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
@@ -284,7 +285,7 @@ func decodeUTF8(body io.Reader) (string, error) {
 
 func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Logger) (string, string, []string, []*models.Attachment) {
 	plain := ""
-	var htmls []string
+	var allHTML []string
 	var attachments []*models.Attachment
 
 	msg, err := mail.ReadMessage(part)
@@ -294,23 +295,27 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 	}
 	ctHeader := strings.TrimSpace(msg.Header.Get("Content-Type"))
 	if len(ctHeader) == 0 {
-		logger.Info("No Content-Type")
-		return "", "", nil, nil
+		logger.Info("No Content-Type header, assume text/plain in UTF-8")
+		ctHeader = "Content-Type: text/plain; charset=UTF-8"
 	}
 	contentType, params, err := mime.ParseMediaType(ctHeader)
 	if err != nil {
 		logger.Info("Content-Type parsing error", "error", err)
 		return "", "", nil, nil
 	}
-
 	charSet := strings.TrimSpace(params["charset"])
 	transferEncoding := strings.ToLower(strings.TrimSpace(msg.Header.Get("Content-Transfer-Encoding")))
+
 	if contentType == "text/plain" {
 		b := decodeBody(msg.Body, charSet, transferEncoding)
 		return contentType, b, nil, nil
 	}
 	if contentType == "text/html" {
 		return contentType, "", []string{decodeBody(msg.Body, charSet, transferEncoding)}, nil
+	}
+	if contentType == "text/markdown" || contentType == "text/x-markdown" || contentType == "text/x-gfm" {
+		html := blackfriday.Run([]byte(decodeBody(msg.Body, charSet, transferEncoding)))
+		return contentType, "", []string{string(html)}, nil
 	}
 	if !strings.HasPrefix(contentType, "multipart/") {
 		return contentType, "", nil, nil
@@ -350,7 +355,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		if strings.HasPrefix(subContentType, "message/") {
 			_, subplain, subhtmls, subAttachments := ParsePart(subPart, tool, logger)
 			plain = plain + subplain + "\n"
-			htmls = append(htmls, subhtmls...)
+			allHTML = append(allHTML, subhtmls...)
 			attachments = append(attachments, subAttachments...)
 			continue
 		}
@@ -362,7 +367,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			}
 			h += "\n"
 
-			_, subplain, subhtmls, subAttachments := ParsePart(
+			_, subPlain, subAllHTML, subAttachments := ParsePart(
 				io.MultiReader(
 					strings.NewReader(h),
 					subPart,
@@ -370,8 +375,8 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 				tool,
 				logger,
 			)
-			plain = plain + subplain + "\n"
-			htmls = append(htmls, subhtmls...)
+			plain = plain + subPlain + "\n"
+			allHTML = append(allHTML, subAllHTML...)
 			attachments = append(attachments, subAttachments...)
 			continue
 		}
@@ -383,7 +388,11 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 				plain = plain + b + "\n"
 			}
 			if subContentType == "text/html" {
-				htmls = append(htmls, decodeBody(subPart, subCharset, subTransferHeader))
+				allHTML = append(allHTML, decodeBody(subPart, subCharset, subTransferHeader))
+			}
+			if subContentType == "text/markdown" || subContentType == "text/x-markdown" || subContentType == "text/x-gfm" {
+				html := blackfriday.Run([]byte(decodeBody(subPart, subCharset, subTransferHeader)))
+				allHTML = append(allHTML, string(html))
 			}
 			continue
 		}
@@ -401,7 +410,7 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 			attachments = append(attachments, attachment)
 		}
 	}
-	return contentType, plain, htmls, attachments
+	return contentType, plain, allHTML, attachments
 }
 
 func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.ExifToolWrapper, l log15.Logger) (*models.Attachment, error) {
@@ -427,9 +436,9 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 	l.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
 
 	if attachment.Executable {
-		meta, err := t.Extract(content, "-EXE:All")
+		meta, err := t.Extract(content, nil,"-EXE:All")
 		if err != nil {
-			l.Warn("Failed to extract metadata with exiftool", "error", err)
+			l.Warn("Failed to extract metadata with 'exiftool'", "error", err)
 		} else {
 			attachment.ExeMetadata = meta
 		}
@@ -438,40 +447,52 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 
 	switch typ {
 	case matchers.TypePdf:
-		m, err := extractors.PDFBytesInfo(content)
+		text, err := extractors.PDFBytesToText(content)
+		if err != nil {
+			l.Warn("Error extracting text from PDF", "error", err)
+		} else if len(text) > 0 {
+			lang := extractors.Language(text)
+			if lang != "" {
+				attachment.PDFMetadata = new(models.PDFMeta)
+				attachment.PDFMetadata.Language = lang
+				attachment.PDFMetadata.Keywords, attachment.PDFMetadata.Phrases = extractors.Keywords(text, nil, attachment.PDFMetadata.Language)
+			}
+		}
+		attachment.PDFMetadata, err = extractors.PDFBytesInfo(content, attachment.PDFMetadata)
 		if err != nil {
 			l.Warn("Error extracting metadata from PDF", "error", err)
-		} else {
-			attachment.PDFMetadata = m
 		}
 	case matchers.TypeDocx:
 		text, props, hasMacro, err := extractors.ConvertBytesDocx(content)
 		if err != nil {
 			l.Warn("Error extracting metadata from DOCX", "error", err)
 		} else {
-			meta := &models.DocMeta{
+			attachment.DocMetadata = &models.DocMeta{
 				Properties: props,
 				HasMacro:   hasMacro,
-				Language:   extractors.Language(text),
 			}
-			if meta.Language != "" {
-				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
+			if len(text) > 0 {
+				lang := extractors.Language(text)
+				if lang != ""  {
+					attachment.DocMetadata.Language = lang
+					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
+				}
 			}
-			attachment.DocMetadata = meta
 		}
 	case utils.OdtType:
 		text, props, err := extractors.ConvertBytesODT(content)
 		if err != nil {
 			l.Warn("Error extracting metadata from ODT", "error", err)
 		} else {
-			meta := &models.DocMeta{
-				Properties: props,
-				Language:   extractors.Language(text),
+			attachment.DocMetadata = new(models.DocMeta)
+			attachment.DocMetadata.Properties = props
+			if len(text) > 0 {
+				lang := extractors.Language(text)
+				if lang != "" {
+					attachment.DocMetadata.Language = lang
+					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
+				}
 			}
-			if meta.Language != "" {
-				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
-			}
-			attachment.DocMetadata = meta
 		}
 
 	case matchers.TypeDoc:
@@ -479,24 +500,51 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 		if err != nil {
 			l.Warn("Error extracting text from DOC", "error", err)
 		} else {
-			meta := &models.DocMeta{
-				Language: extractors.Language(text),
+			if len(text) > 0 {
+				lang := extractors.Language(text)
+				if lang != "" {
+					attachment.DocMetadata = new(models.DocMeta)
+					attachment.DocMetadata.Language = lang
+					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
+				}
 			}
-			p, err := t.Extract(content, "-FlashPix:All")
+			p, err := t.Extract(content, nil, "-FlashPix:All")
 			if err != nil {
 				l.Warn("Error extracting metadata from DOC", "error", err)
 			} else {
-				meta.Properties = p
+				if attachment.DocMetadata == nil {
+					attachment.DocMetadata = new(models.DocMeta)
+				}
+				attachment.DocMetadata.Properties = p
 			}
-			if meta.Language != "" {
-				meta.Keywords, meta.Phrases = extractors.Keywords(text, nil, meta.Language)
+		}
+
+	case utils.HTMLType:
+		text, _, _ := extractors.HTML2Text(string(content))
+		if len(text) > 0 {
+			lang := extractors.Language(text)
+			if lang != "" {
+				attachment.DocMetadata = new(models.DocMeta)
+				attachment.DocMetadata.Language = lang
+				attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
 			}
-			attachment.DocMetadata = meta
+		}
+
+	case utils.MarkdownType:
+		html := string(blackfriday.Run(content))
+		text, _, _ := extractors.HTML2Text(html)
+		if len(text) > 0 {
+			lang := extractors.Language(text)
+			if lang != "" {
+				attachment.DocMetadata = new(models.DocMeta)
+				attachment.DocMetadata.Language = lang
+				attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
+			}
 		}
 
 	case matchers.TypePng:
 		if t != nil {
-			meta, err := t.Extract(content, "-EXIF:All", "-PNG:All")
+			meta, err := t.Extract(content, nil, "-EXIF:All", "-PNG:All")
 			if err != nil {
 				l.Warn("Failed to extract metadata with exiftool", "error", err)
 			} else {
@@ -506,7 +554,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 
 	case matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
 		if t != nil {
-			meta, err := t.Extract(content, "-EXIF:All")
+			meta, err := t.Extract(content, nil, "-EXIF:All")
 			if err != nil {
 				l.Warn("Failed to extract metadata with exiftool", "error", err)
 			} else {
@@ -564,24 +612,25 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 			}
 			subAttachment, err := AnalyseAttachment(filename, "", xzReader, t, l)
 			if err != nil {
-				l.Warn("Error analyzing subattachement", "error", err)
+				l.Warn("Error analyzing sub-attachment", "error", err)
 			} else {
 				attachment.SubAttachment = subAttachment
 				attachment.Executable = subAttachment.Executable
 			}
 		}
 
-	default:
-		if typ.MIME.Value == "text/plain" && strings.HasSuffix(filename, ".ics") {
-			dec := goics.NewDecoder(bytes.NewReader(content))
-			c := new(extractors.IcalConsumer)
-			err := dec.Decode(c)
-			if err == nil && c.Events != nil {
-				attachment.EventsMetadata = c.Events
-			}
-		} else {
-			l.Info("Unknown attachment type", "type", typ.MIME.Value)
+	case utils.IcalType:
+		dec := goics.NewDecoder(bytes.NewReader(content))
+		c := new(extractors.IcalConsumer)
+		err := dec.Decode(c)
+		if err != nil {
+			l.Warn("Failed to decode iCal", "error", err)
+		} else if c.Events != nil {
+			attachment.EventsMetadata = c.Events
 		}
+
+	default:
+		l.Info("Unknown attachment type", "type", typ.MIME.Value)
 	}
 
 	return attachment, nil

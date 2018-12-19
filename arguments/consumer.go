@@ -44,7 +44,7 @@ func (args ConsumerArgs) GetType() ConsumerType {
 	return ConsumerTypes[args.Type]
 }
 
-func (args ConsumerArgs) Verify() error {
+func (args *ConsumerArgs) Verify() error {
 	v := verifier.New()
 	_, ok := ConsumerTypes[args.Type]
 	v.That(ok, "consumer type unknown")
@@ -54,12 +54,8 @@ func (args ConsumerArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args *ConsumerArgs) Populate(c *cli.Context) *ConsumerArgs {
-	if args == nil {
-		args = new(ConsumerArgs)
-	}
+func (args *ConsumerArgs) Populate(c *cli.Context) {
 	args.Type = strings.ToLower(strings.TrimSpace(c.GlobalString("out")))
 	args.OutFile = strings.ToLower(strings.TrimSpace(c.GlobalString("outfile")))
 	args.OutURL = strings.ToLower(strings.TrimSpace(c.GlobalString("outurl")))
-	return args
 }

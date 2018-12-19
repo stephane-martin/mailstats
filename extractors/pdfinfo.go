@@ -20,17 +20,17 @@ var dateFormat = "Mon Jan _2 15:04:05 2006 MST"
 // Tue Nov  6 01:57:57 2018 CET
 
 
-type AbsentExe struct {
+type AbsentUtil struct {
 	Err error
 	Exe string
 }
 
-func (err *AbsentExe) Error() string {
+func (err *AbsentUtil) Error() string {
 	return fmt.Sprintf("Executable '%s' is not in PATH: %s", err.Exe, err.Err)
 }
 
 func Absent(exe string, err error) error {
-	return &AbsentExe{Exe: exe, Err: err}
+	return &AbsentUtil{Exe: exe, Err: err}
 }
 
 func PDFToText(filename string) (string, error) {
@@ -56,7 +56,7 @@ func PDFToText(filename string) (string, error) {
 	if status.Exit != 0 {
 		return "", fmt.Errorf("pdftotext exit code not null: %d", status.Exit)
 	}
-	return strings.Join(status.Stdout, "\n"), nil
+	return strings.TrimSpace(strings.Join(status.Stdout, "\n")), nil
 }
 
 func PDFBytesToText(content []byte) (result string, err error) {
@@ -71,30 +71,32 @@ func PDFBytesToText(content []byte) (result string, err error) {
 	return result, err
 }
 
-func PDFInfo(filename string) (*models.PDFMeta, error) {
+func PDFInfo(filename string, meta *models.PDFMeta) (*models.PDFMeta, error) {
+	if meta == nil {
+		meta = new(models.PDFMeta)
+	}
 	stat, err := os.Stat(filename)
 	if err != nil {
-		return nil, err
+		return meta, err
 	}
 	if !stat.Mode().IsRegular() {
-		return nil, errors.New("not a regular file")
+		return meta, errors.New("not a regular file")
 	}
 	pdfinfoPath, err := exec.LookPath("pdfinfo")
 	if err != nil {
-		return nil, Absent("pdfinfo", err)
+		return meta, Absent("pdfinfo", err)
 	}
 	command := cmd.NewCmd(pdfinfoPath, filename)
 	status := <-command.Start()
 	if status.Error != nil {
-		return nil, status.Error
+		return meta, status.Error
 	}
 	if !status.Complete {
-		return nil, errors.New("pdfinfo stopped abnormaly")
+		return meta, errors.New("pdfinfo stopped abnormaly")
 	}
 	if status.Exit != 0 {
-		return nil, fmt.Errorf("pdfinfo exit code not null: %d", status.Exit)
+		return meta, fmt.Errorf("pdfinfo exit code not null: %d", status.Exit)
 	}
-	meta := new(models.PDFMeta)
 	for _, line := range status.Stdout {
 		line = strings.TrimSpace(line)
 		if len(line) == 0 {
@@ -153,13 +155,13 @@ func PDFInfo(filename string) (*models.PDFMeta, error) {
 	return meta, nil
 }
 
-func PDFBytesInfo(pdf []byte) (meta *models.PDFMeta, err error) {
+func PDFBytesInfo(pdf []byte, meta *models.PDFMeta) (*models.PDFMeta, error) {
 	temp, err := utils.NewTempFile(pdf)
 	if err != nil {
-		return nil, err
+		return meta, err
 	}
 	_ = temp.RemoveAfter(func(name string) error {
-		meta, err = PDFInfo(name)
+		meta, err = PDFInfo(name, meta)
 		return err
 	})
 	return meta, err

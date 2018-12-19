@@ -12,10 +12,15 @@ import (
 	"strings"
 )
 
-var OdtType types.Type
+var OdtType = filetype.NewType("odt", "application/vnd.oasis.opendocument.text")
+var PlainType = filetype.NewType("txt", "text/plain")
+var IcalType = filetype.NewType("ics", "text/calendar")
+var MarkdownType = filetype.NewType("md", "text/markdown")
+var RestType = filetype.NewType("rst", "text/x-rst")
+var HTMLType = filetype.NewType("html", "text/html")
+var icalBegin = []byte("BEGIN:VCALENDAR")
 
 func init() {
-	OdtType = filetype.NewType("odt", "application/vnd.oasis.opendocument.text")
 	filetype.AddMatcher(OdtType, odtMatcher)
 }
 
@@ -27,6 +32,13 @@ func odtMatcher(buf []byte) bool {
 		(buf[3] == 0x4 || buf[3] == 0x6 || buf[3] == 0x8) &&
 		string(buf[30:38]) == "mimetype" &&
 		string(buf[38:38+len(OdtType.MIME.Value)]) == OdtType.MIME.Value
+}
+
+func icalMatcher(buf []byte) bool {
+	if len(buf) < 28 {
+		return false
+	}
+	return bytes.Contains(buf[:28], icalBegin)
 }
 
 func GuessReader(filename string, reader io.Reader) (types.Type, io.Reader, error) {
@@ -67,9 +79,11 @@ func Guess(filename string, content []byte) (types.Type, error) {
 		}
 		return t, nil
 	}
-	if t != types.Unknown && t != matchers.TypeEot {
+
+	if t != types.Unknown && t != matchers.TypeEot && t != PlainType {
 		return t, nil
 	}
+
 	mime, ext := mimetype.Detect(content)
 	if t2 := m2f(mime, ext); t2 != types.Unknown {
 		return t2, nil
@@ -81,17 +95,23 @@ func Guess(filename string, content []byte) (types.Type, error) {
 					return m2f(mime, exts[0]), nil
 				}
 			}
-
 		}
 	}
-	return types.Unknown, nil
+	if IsBinary(content) {
+		return matchers.TypeEot, nil
+	}
+	if icalMatcher(content) {
+		return IcalType, nil
+	}
+	return PlainType, nil
 }
 
 func m2f(t, ext string) types.Type {
+	ext = strings.Trim(ext, ".")
 	if t == "" || t == "application/octet-stream" || t == "text/plain" {
 		return types.Unknown
 	}
-	if f := types.Get(ext); f != types.Unknown {
+	if f := types.Get(ext); f != types.Unknown && f != matchers.TypeEot && f != PlainType {
 		return f
 	}
 	parts := strings.SplitN(t, "/", 2)
@@ -104,7 +124,6 @@ func m2f(t, ext string) types.Type {
 		},
 	}
 }
-
 
 func getLanguages(filename string, content []byte) []string {
 	var languages []string

@@ -360,6 +360,14 @@
   revision = "67afb5ed74ec82fd7ac8f49d27c509ac6f991970"
 
 [[projects]]
+  branch = "master"
+  digest = "1:8bacc2118e6cc6a207eb144656537ff7ee0397f8bc8c1f7639519b0de2bb949a"
+  name = "github.com/jaytaylor/html2text"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "57d518f124b0cf46ea2021f25a01396b3522e6fb"
+
+[[projects]]
   branch = "v2"
   digest = "1:ff398a1169e0ad11c0537c341fcbc9b4be7e34143886b34352ff1005d45b3ab4"
   name = "github.com/jdkato/prose"
@@ -415,6 +423,14 @@
   packages = ["."]
   pruneopts = "UT"
   revision = "6ca4dbf54d38eea1a992b3c722a76a5d1c4cb25c"
+  version = "v0.0.4"
+
+[[projects]]
+  digest = "1:0356f3312c9bd1cbeda81505b7fd437501d8e778ab66998ef69f00d7f9b3a0d7"
+  name = "github.com/mattn/go-runewidth"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "3ee7d812e62a0804a7d0a324e0249ca2db3476d3"
   version = "v0.0.4"
 
 [[projects]]
@@ -496,6 +512,14 @@
   pruneopts = "UT"
   revision = "02a8604050d8466dd915307496174adb9be4593a"
   version = "v1.3.1"
+
+[[projects]]
+  digest = "1:abcdbf03ca6ca13d3697e2186edc1f33863bbdac2b3a44dfa39015e8903f7409"
+  name = "github.com/olekukonko/tablewriter"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e6d60cf7ba1f42d86d54cdf5508611c4aafb3970"
+  version = "v0.0.1"
 
 [[projects]]
   digest = "1:2e8bdbc8a11d716dab1bf66d326285d7e5c92fa4c996c1574ba1153e57534b85"
@@ -621,6 +645,14 @@
   revision = "3113b8401b8a98917cde58f8bbd42a1b1c03b1fd"
 
 [[projects]]
+  digest = "1:2ee0f15eb0fb04f918db7c2dcf39745f40d69f798ef171610a730e8a56aaa4fd"
+  name = "github.com/russross/blackfriday"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "d3b5b032dc8e8927d31a5071b56e14c89f045135"
+  version = "v2.0.1"
+
+[[projects]]
   digest = "1:a79502742652bac9b1772edacd2a1555a2afaf6299d5574f898a05c31eb590c6"
   name = "github.com/schollz/pake"
   packages = ["."]
@@ -629,12 +661,28 @@
   version = "v1.1.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:def689e73e9252f6f7fe66834a76751a41b767e03daab299e607e7226c58a855"
+  name = "github.com/shurcooL/sanitized_anchor_name"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "86672fcb3f950f35f2e675df2240550f2a50762f"
+
+[[projects]]
   digest = "1:f7805d1cc7776d00da2aa3dbacf85927e58e6dad630ba9f3ea5b92d719f96269"
   name = "github.com/sony/gobreaker"
   packages = ["."]
   pruneopts = "UT"
   revision = "e9556a45379ef1da12e54847edb2fb3d7d566f36"
   version = "0.3.0"
+
+[[projects]]
+  branch = "master"
+  digest = "1:362b269942e8508aed33025593090ad4cdbd9077de4b1cd505e6124728e9e856"
+  name = "github.com/ssor/bom"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6386211fdfcf24c0bfbdaceafd02849ed9a8a509"
 
 [[projects]]
   branch = "master"
@@ -892,6 +940,7 @@
     "github.com/h2non/filetype/matchers",
     "github.com/h2non/filetype/types",
     "github.com/inconshreveable/log15",
+    "github.com/jaytaylor/html2text",
     "github.com/jdkato/prose",
     "github.com/jordic/goics",
     "github.com/kljensen/snowball",
@@ -906,6 +955,7 @@
     "github.com/prometheus/client_golang/prometheus",
     "github.com/prometheus/client_golang/prometheus/promhttp",
     "github.com/rafaeljesus/rabbus",
+    "github.com/russross/blackfriday",
     "github.com/schollz/pake",
     "github.com/storozhukBM/verifier",
     "github.com/tinylib/msgp/msgp",

@@ -17,22 +17,18 @@ type RabbitArgs struct {
 	ResultsRoutingKey   string
 }
 
-func (args RabbitArgs) Verify() error {
+func (args *RabbitArgs) Verify() error {
 	v := verifier.New()
 	_, err := url.Parse(args.URI)
 	v.That(err == nil, fmt.Sprintf("Invalid RabbitMQ URI: %s", err))
 	return v.GetError()
 }
 
-func (args *RabbitArgs) Populate(c *cli.Context) *RabbitArgs {
-	if args == nil {
-		args = new(RabbitArgs)
-	}
+func (args *RabbitArgs) Populate(c *cli.Context) {
 	args.URI = strings.TrimSpace(c.GlobalString("rabbitmq-uri"))
 	args.CollectorExchange = strings.TrimSpace(c.GlobalString("rabbitmq-collector-exchange"))
 	args.CollectorQueue = strings.TrimSpace(c.GlobalString("rabbitmq-collector-queue"))
 	args.ResultsExchange = strings.TrimSpace(c.GlobalString("rabbitmq-results-exchange"))
 	args.ResultsExchangeType = strings.TrimSpace(c.GlobalString("rabbitmq-results-exchange-type"))
 	args.ResultsRoutingKey = strings.TrimSpace(c.GlobalString("rabbitmq-results-routing-key"))
-	return args
 }

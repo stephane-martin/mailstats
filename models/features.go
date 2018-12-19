@@ -124,10 +124,13 @@ type PDFMeta struct {
 	FileSize       int        `json:"file_size"`
 	Optimized      bool       `json:"optimized"`
 	Version        string     `json:"version,omitempty"`
+	Language       string     `json:"language"`
+	Keywords       []string   `json:"keywords"`
+	Phrases        []string   `json:"phrases"`
 }
 
 type DocMeta struct {
-	HasMacro   bool                   `json:"has_macro"`
+	HasMacro   bool                   `json:"has_macro"`	// TODO
 	Language   string                 `json:"language"`
 	Keywords   []string               `json:"keywords"`
 	Phrases    []string               `json:"phrases"`
