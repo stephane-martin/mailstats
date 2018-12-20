@@ -165,7 +165,9 @@ func GeoIP(ip net.IP) (*models.GeoIPResult, error) {
 		Country:   c.Country.Names["en"],
 		Continent: c.Continent.Names["en"],
 		City:      c.City.Names["en"],
-		Latitude:  c.Location.Latitude,
-		Longitude: c.Location.Longitude,
+		Coordinates: &models.LatLon{
+			Latitude:  c.Location.Latitude,
+			Longitude: c.Location.Longitude,
+		},
 	}, nil
 }

@@ -17,6 +17,7 @@ const (
 	HTTP
 	Rabbit
 	Kafka
+	Elasticsearch
 )
 
 var ConsumerTypes = map[string]ConsumerType{
@@ -27,6 +28,7 @@ var ConsumerTypes = map[string]ConsumerType{
 	"http": HTTP,
 	"rabbitmq": Rabbit,
 	"kafka": Kafka,
+	"elasticsearch": Elasticsearch,
 }
 
 type ConsumerArgs struct {

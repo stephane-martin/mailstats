@@ -9,7 +9,7 @@ import (
 type FeaturesMail struct {
 	BaseInfos   `yaml:",inline"`
 	UID         string              `json:"uid,omitempty"`
-	Size        int                 `json:"size"`
+	Size        int64               `json:"size_bytes"`
 	ContentType string              `json:"content_type,omitempty"`
 	Reported    string              `json:"timereported,omitempty"`
 	Headers     map[string][]string `json:"headers,omitempty"`
@@ -47,7 +47,7 @@ type ReceivedElement struct {
 	Timestamp    *time.Time    `json:"time,omitempty"`
 	EnvelopeFrom string        `json:"envelope_from,omitempty"`
 	Helo         string        `json:"helo,omitempty"`
-	Raw          string        `json:"raw"`
+	Raw          string        `json:"raw,omitempty"`
 }
 
 type ReceivedFrom struct {
@@ -57,7 +57,7 @@ type ReceivedFrom struct {
 }
 
 type ReceivedIP struct {
-	Parsed   net.IP       `json:"parsed,omitempty"`
+	Parsed   net.IP       `json:"parsed_ip,omitempty"`
 	Reported string       `json:"reported,omitempty"`
 	Public   bool         `json:"public"`
 	Location *GeoIPResult `json:"location,omitempty"`
@@ -69,18 +69,22 @@ type ReceivedBy struct {
 }
 
 type GeoIPResult struct {
-	Country   string  `json:"country,omitempty"`
-	Continent string  `json:"continent,omitempty"`
-	City      string  `json:"city,omitempty"`
-	Latitude  float64 `json:"latitude,omitempty"`
-	Longitude float64 `json:"longitude,omitempty"`
+	Country     string  `json:"country,omitempty"`
+	Continent   string  `json:"continent,omitempty"`
+	City        string  `json:"city,omitempty"`
+	Coordinates *LatLon `json:"coordinates,omitempty"`
+}
+
+type LatLon struct {
+	Latitude  float64 `json:"lat"`
+	Longitude float64 `json:"lon"`
 }
 
 type Attachment struct {
 	Name           string                 `json:"name,omitempty"`
 	InferredType   string                 `json:"inferred_type,omitempty"`
 	ReportedType   string                 `json:"reported_type,omitempty"`
-	Size           uint64                 `json:"size"`
+	Size           int64                  `json:"size_bytes"`
 	Hash           string                 `json:"hash,omitempty"`
 	PDFMetadata    *PDFMeta               `json:"pdf_metadata,omitempty"`
 	DocMetadata    *DocMeta               `json:"doc_metadata,omitempty"`
@@ -118,23 +122,23 @@ type PDFMeta struct {
 	UserProperties bool       `json:"user_properties"`
 	Form           string     `json:"form,omitempty"`
 	Javascript     bool       `json:"javascript"`
-	Pages          int        `json:"pages"`
+	Pages          int64      `json:"pages"`
 	Encrypted      bool       `json:"encrypted"`
 	PageSize       string     `json:"page_size,omitempty"`
-	FileSize       int        `json:"file_size"`
+	FileSize       int64      `json:"file_size_bytes"`
 	Optimized      bool       `json:"optimized"`
 	Version        string     `json:"version,omitempty"`
-	Language       string     `json:"language"`
-	Keywords       []string   `json:"keywords"`
-	Phrases        []string   `json:"phrases"`
+	Language       string     `json:"language,omitempty"`
+	Keywords       []string   `json:"keywords,omitempty"`
+	Phrases        []string   `json:"phrases,omitempty"`
 }
 
 type DocMeta struct {
-	HasMacro   bool                   `json:"has_macro"`	// TODO
-	Language   string                 `json:"language"`
-	Keywords   []string               `json:"keywords"`
-	Phrases    []string               `json:"phrases"`
-	Properties map[string]interface{} `json:"properties"`
+	HasMacro   bool                   `json:"has_macro"` // TODO
+	Language   string                 `json:"language,omitempty"`
+	Keywords   []string               `json:"keywords,omitempty"`
+	Phrases    []string               `json:"phrases,omitempty"`
+	Properties map[string]interface{} `json:"properties,omitempty"`
 }
 
 type ArchiveFile struct {
@@ -145,10 +149,9 @@ type ArchiveFile struct {
 }
 
 type Archive struct {
-	Files            []*ArchiveFile      `json:"files,omitempty"`
-	DecompressedSize uint64              `json:"decompressed_size"`
-	ArchiveType      string              `json:"type,omitempty"`
-	SubArchives      map[string]*Archive `json:"sub_archives,omitempty"`
-	// TODO
-	ContainsExecutable bool `json:"contains_exe"`
+	Files              []*ArchiveFile      `json:"files,omitempty"`
+	DecompressedSize   int64               `json:"decompressed_size_bytes"`
+	ArchiveType        string              `json:"type,omitempty"`
+	SubArchives        map[string]*Archive `json:"sub_archives,omitempty"`
+	ContainsExecutable bool                `json:"contains_exe"`
 }

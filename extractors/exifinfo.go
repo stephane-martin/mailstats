@@ -12,13 +12,12 @@ type ExifToolWrapper struct {
 	tool *exiftool.Pool
 }
 
-
 // TODO: run exiftool in sandbox
 
 func NewExifToolWrapper() (*ExifToolWrapper, error) {
 	path, err := exec.LookPath("exiftool")
 	if err != nil {
-		return nil, Absent("exiftool", err)
+		return nil, Absent("exiftool")
 	}
 	t, err := exiftool.NewPool(path, runtime.NumCPU(), "-json")
 	if err != nil {
@@ -28,14 +27,17 @@ func NewExifToolWrapper() (*ExifToolWrapper, error) {
 }
 
 func (w *ExifToolWrapper) ExtractFromFile(filename string, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
+	if w == nil {
+		return meta, Absent("exiftool")
+	}
 	res, err := w.tool.ExtractFlags(filename, flags...)
 	if err != nil {
-		return nil, err
+		return meta, err
 	}
 	attributes := make([]map[string]interface{}, 0)
 	err = json.Unmarshal(res, &attributes)
 	if err != nil {
-		return nil, err
+		return meta, err
 	}
 	if len(attributes) == 0 {
 		return meta, nil
@@ -51,9 +53,12 @@ func (w *ExifToolWrapper) ExtractFromFile(filename string, meta map[string]inter
 }
 
 func (w *ExifToolWrapper) Extract(content []byte, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
+	if w == nil {
+		return meta, Absent("exiftool")
+	}
 	temp, err := utils.NewTempFile(content)
 	if err != nil {
-		return nil, err
+		return meta, err
 	}
 	if meta == nil {
 		meta = make(map[string]interface{})
@@ -66,6 +71,13 @@ func (w *ExifToolWrapper) Extract(content []byte, meta map[string]interface{}, f
 }
 
 func (w *ExifToolWrapper) Close() error {
+	if w == nil {
+		return nil
+	}
+	if w.tool == nil {
+		return nil
+	}
 	w.tool.Stop()
+	w.tool = nil
 	return nil
 }

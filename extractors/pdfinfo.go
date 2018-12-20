@@ -19,21 +19,36 @@ var dateFormat = "Mon Jan _2 15:04:05 2006 MST"
 // Sat Nov 24 21:13:01 2018 CET
 // Tue Nov  6 01:57:57 2018 CET
 
+var PDFToTextPath string
+var PDFInfoPath string
+
+func init() {
+	path, err := exec.LookPath("pdftotext")
+	if err == nil {
+		PDFToTextPath = path
+	}
+	path, err = exec.LookPath("pdfinfo")
+	if err == nil {
+		PDFInfoPath = path
+	}
+}
 
 type AbsentUtil struct {
-	Err error
 	Exe string
 }
 
 func (err *AbsentUtil) Error() string {
-	return fmt.Sprintf("Executable '%s' is not in PATH: %s", err.Exe, err.Err)
+	return fmt.Sprintf("Executable '%s' is not in PATH", err.Exe)
 }
 
-func Absent(exe string, err error) error {
-	return &AbsentUtil{Exe: exe, Err: err}
+func Absent(exe string) error {
+	return &AbsentUtil{Exe: exe}
 }
 
 func PDFToText(filename string) (string, error) {
+	if PDFToTextPath == "" {
+		return "", Absent("pdftotext")
+	}
 	stat, err := os.Stat(filename)
 	if err != nil {
 		return "", err
@@ -41,11 +56,7 @@ func PDFToText(filename string) (string, error) {
 	if !stat.Mode().IsRegular() {
 		return "", errors.New("not a regular file")
 	}
-	pdftotextPath, err := exec.LookPath("pdftotext")
-	if err != nil {
-		return "", Absent("pdftotext", err)
-	}
-	command := cmd.NewCmd(pdftotextPath, "-nopgbrk", "-eol", "unix", "-q", "-enc", "UTF-8", filename, "-")
+	command := cmd.NewCmd(PDFToTextPath, "-nopgbrk", "-eol", "unix", "-q", "-enc", "UTF-8", filename, "-")
 	status := <-command.Start()
 	if status.Error != nil {
 		return "", status.Error
@@ -72,6 +83,9 @@ func PDFBytesToText(content []byte) (result string, err error) {
 }
 
 func PDFInfo(filename string, meta *models.PDFMeta) (*models.PDFMeta, error) {
+	if PDFInfoPath == "" {
+		return meta, Absent("pdfinfo")
+	}
 	if meta == nil {
 		meta = new(models.PDFMeta)
 	}
@@ -82,11 +96,7 @@ func PDFInfo(filename string, meta *models.PDFMeta) (*models.PDFMeta, error) {
 	if !stat.Mode().IsRegular() {
 		return meta, errors.New("not a regular file")
 	}
-	pdfinfoPath, err := exec.LookPath("pdfinfo")
-	if err != nil {
-		return meta, Absent("pdfinfo", err)
-	}
-	command := cmd.NewCmd(pdfinfoPath, filename)
+	command := cmd.NewCmd(PDFInfoPath, filename)
 	status := <-command.Start()
 	if status.Error != nil {
 		return meta, status.Error
@@ -133,7 +143,7 @@ func PDFInfo(filename string, meta *models.PDFMeta) (*models.PDFMeta, error) {
 		case "pages":
 			p, err := strconv.ParseInt(value, 10, 32)
 			if err == nil {
-				meta.Pages = int(p)
+				meta.Pages = int64(p)
 			}
 		case "encrypted":
 			meta.Encrypted = value != "no"
@@ -143,7 +153,7 @@ func PDFInfo(filename string, meta *models.PDFMeta) (*models.PDFMeta, error) {
 			value = strings.TrimSpace(strings.TrimSuffix(value, "bytes"))
 			s, err := strconv.ParseInt(value, 10, 64)
 			if err == nil {
-				meta.FileSize = int(s)
+				meta.FileSize = int64(s)
 			}
 		case "optimized":
 			meta.Optimized = value != "no"

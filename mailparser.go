@@ -25,6 +25,7 @@ import (
 	"github.com/h2non/filetype/matchers"
 	"github.com/jordic/goics"
 	"github.com/oklog/ulid"
+	"github.com/russross/blackfriday"
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/extractors"
@@ -33,7 +34,6 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/xi2/xz"
 	"golang.org/x/sync/errgroup"
-	"github.com/russross/blackfriday"
 
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
@@ -41,7 +41,6 @@ import (
 	"golang.org/x/text/encoding/htmlindex"
 	"golang.org/x/text/encoding/unicode"
 )
-
 
 type Parser interface {
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
@@ -104,7 +103,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 			features.Headers[k] = append(features.Headers[k], decv)
 		}
 	}
-	features.Size = len(i.Data)
+	features.Size = int64(len(i.Data))
 
 	contentType, plain, htmls, attachments := ParsePart(bytes.NewReader(i.Data), p.tool, p.logger)
 	features.ContentType = contentType
@@ -124,7 +123,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 		images = append(images, eImages...)
 	}
 	ahtml := strings.TrimSpace(b.String())
-	if len(ahtml) > 0 && (len(ahtml) >= (len(plain)/2)) {
+	if len(ahtml) > 0 && (len(ahtml) >= (len(plain) / 2)) {
 		plain = ahtml
 	}
 	// unicode normalization
@@ -419,8 +418,8 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 		return nil, err
 	}
 	attachment := &models.Attachment{
-		Name: filename,
-		Size: uint64(len(content)),
+		Name:         filename,
+		Size:         int64(len(content)),
 		ReportedType: ct,
 	}
 
@@ -436,7 +435,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 	l.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
 
 	if attachment.Executable {
-		meta, err := t.Extract(content, nil,"-EXE:All")
+		meta, err := t.Extract(content, nil, "-EXE:All")
 		if err != nil {
 			l.Warn("Failed to extract metadata with 'exiftool'", "error", err)
 		} else {
@@ -473,7 +472,7 @@ func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.Ex
 			}
 			if len(text) > 0 {
 				lang := extractors.Language(text)
-				if lang != ""  {
+				if lang != "" {
 					attachment.DocMetadata.Language = lang
 					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
 				}

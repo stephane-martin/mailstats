@@ -186,6 +186,10 @@
     name = "github.com/jaytaylor/html2text"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/olivere/elastic"
+    version = "6.2.14"
+
 [prune]
 	go-tests = true
 	unused-packages = true

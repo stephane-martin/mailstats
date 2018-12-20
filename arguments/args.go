@@ -9,19 +9,20 @@ import (
 )
 
 type Args struct {
-	SMTP      SMTPArgs
-	Milter    MilterArgs
-	HTTP      HTTPArgs
-	Redis     RedisArgs
-	Consumer  ConsumerArgs
-	Logging   LoggingArgs
-	Forward   ForwardArgs
-	Collector CollectorArgs
-	Rabbit    RabbitArgs
-	Kafka     KafkaArgs
-	GeoIP     GeoIPArgs
-	Secret    *memguard.LockedBuffer
-	NbParsers int
+	SMTP          SMTPArgs
+	Milter        MilterArgs
+	HTTP          HTTPArgs
+	Redis         RedisArgs
+	Consumer      ConsumerArgs
+	Logging       LoggingArgs
+	Forward       ForwardArgs
+	Collector     CollectorArgs
+	Rabbit        RabbitArgs
+	Kafka         KafkaArgs
+	GeoIP         GeoIPArgs
+	Elasticsearch ElasticsearchArgs
+	Secret        *memguard.LockedBuffer `json:"-"`
+	NbParsers     int
 }
 
 type argsI interface {
@@ -44,6 +45,7 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		&args.Rabbit,
 		&args.Kafka,
 		&args.GeoIP,
+		&args.Elasticsearch,
 	}
 
 	for _, i := range toInit {
@@ -69,4 +71,3 @@ func GetArgs(c *cli.Context) (*Args, error) {
 
 	return args, nil
 }
-

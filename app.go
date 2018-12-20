@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/russross/blackfriday"
+	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
@@ -182,9 +183,37 @@ func MakeApp() *cli.App {
 			Value: "mailstats.results",
 			EnvVar: "MAILSTATS_KAFKA_TOPIC",
 		},
+		cli.StringSliceFlag{
+			Name: "elasticsearch-url",
+			Usage: "URL for Elasticsearch node",
+			EnvVar: "MAILSTATS_ELASTICSEARCH_URL",
+		},
+		cli.StringFlag{
+			Name: "elasticsearch-index-name",
+			Usage: "Elasticsearch index where to store results",
+			Value: "mailstats",
+			EnvVar: "MAILSTATS_ELASTICSEARCH_INDEX_NAME",
+		},
+
 	}
 	app.Version = Version
 	app.Commands = []cli.Command{
+		{
+			Name: "args",
+			Usage: "print args",
+			Action: func(c *cli.Context) error {
+				args, err := arguments.GetArgs(c)
+				if err != nil {
+					return cli.NewExitError(err.Error(), 1)
+				}
+				b, err := json.MarshalIndent(args, "", "  ")
+				if err != nil {
+					return cli.NewExitError(err.Error(), 1)
+				}
+				fmt.Println(string(b))
+				return nil
+			},
+		},
 		{
 			Name:   "worker",
 			Usage:  "start worker",
@@ -512,24 +541,28 @@ func MakeApp() *cli.App {
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
+
 					case ".docx", ".docm":
 						var err error
 						content, _, _, err = extractors.ConvertDocx(f)
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
+
 					case ".doc":
 						var err error
 						content, err = extractors.ConvertDoc(f)
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
+
 					case ".odt":
 						var err error
 						content, _, err = extractors.ConvertODT(f)
 						if err != nil {
 							return cli.NewExitError(err.Error(), 1)
 						}
+
 					case ".html":
 						f, err := os.Open(f)
 						if err != nil {

@@ -260,7 +260,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			metrics.M().Registry,
 			promhttp.HandlerOpts{
 				DisableCompression:  true,
-				ErrorLog:            adaptPromLogger(logger),
+				ErrorLog:            utils.PromLogger(logger),
 				ErrorHandling:       promhttp.HTTPErrorOnError,
 				MaxRequestsInFlight: -1,
 				Timeout:             -1,

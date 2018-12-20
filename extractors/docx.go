@@ -20,6 +20,15 @@ import (
 // taken from docconv project
 // https://github.com/sajari/docconv
 
+var AntiwordPath string
+
+func init() {
+	p, err := exec.LookPath("antiword")
+	if err == nil {
+		AntiwordPath = p
+	}
+}
+
 func ConvertDocx(filename string) (string, map[string]interface{}, bool, error) {
 	f, err := os.Open(filename)
 	if err!= nil {
@@ -209,6 +218,9 @@ func XMLToMap(r io.Reader) (map[string]interface{}, error) {
 }
 
 func ConvertDoc(filename string) (string, error) {
+	if AntiwordPath == "" {
+		return "", Absent("antiword")
+	}
 	stat, err := os.Stat(filename)
 	if err != nil {
 		return "", err
@@ -216,11 +228,7 @@ func ConvertDoc(filename string) (string, error) {
 	if !stat.Mode().IsRegular() {
 		return "", errors.New("not a regular file")
 	}
-	pdfinfoPath, err := exec.LookPath("antiword")
-	if err != nil {
-		return "", Absent("antiword", err)
-	}
-	command := cmd.NewCmd(pdfinfoPath, filename)
+	command := cmd.NewCmd(AntiwordPath, filename)
 	status := <-command.Start()
 	if status.Error != nil {
 		return "", status.Error

@@ -13,7 +13,6 @@ type Consumer interface {
 }
 
 
-
 func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
 	switch args.Consumer.GetType() {
 	case arguments.Stdout:
@@ -30,6 +29,8 @@ func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
 		return NewRabbitConsumer(args.Rabbit, logger)
 	case arguments.Kafka:
 		return NewKafkaConsumer(args.Kafka.Brokers, args.Kafka.Topic, logger)
+	case arguments.Elasticsearch:
+		return NewElasticsearchConsumer(args.Elasticsearch.Nodes, args.Elasticsearch.IndexName, logger)
 	default:
 		return nil, errors.New("unknown consumer type")
 	}

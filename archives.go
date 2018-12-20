@@ -23,7 +23,7 @@ import (
 
 // TODO: refactor
 
-func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size uint64, logger log15.Logger) (*models.Archive, error) {
+func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size int64, logger log15.Logger) (*models.Archive, error) {
 	switch typ {
 	case matchers.TypeZip:
 		return AnalyzeZip(reader, size, logger)
@@ -74,7 +74,7 @@ func replaceCompressed(oldType types.Type, oldReader io.Reader, logger log15.Log
 	}
 }
 
-func AnalyzeZip(reader io.ReaderAt, size uint64, logger log15.Logger) (*models.Archive, error) {
+func AnalyzeZip(reader io.ReaderAt, size int64, logger log15.Logger) (*models.Archive, error) {
 	zipReader, err := zip.NewReader(reader, int64(size))
 	if err != nil {
 		return nil, err
@@ -86,7 +86,7 @@ LoopFiles:
 	for _, f := range zipReader.File {
 		entry := models.ArchiveFile{Name: f.Name, Extension: filepath.Ext(f.Name)}
 		archive.Files = append(archive.Files, &entry)
-		archive.DecompressedSize += f.UncompressedSize64
+		archive.DecompressedSize += int64(f.UncompressedSize64)
 		if f.FileInfo().IsDir() {
 			continue LoopFiles
 		}
@@ -139,7 +139,7 @@ LoopFiles:
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
 			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
+				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
 						archive.SubArchives = make(map[string]*models.Archive)
@@ -177,7 +177,7 @@ LoopFiles:
 		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
 		archive.Files = append(archive.Files, &entry)
 		if !header.UnKnownSize {
-			archive.DecompressedSize += uint64(header.UnPackedSize)
+			archive.DecompressedSize += int64(header.UnPackedSize)
 		}
 		if header.IsDir {
 			continue LoopFiles
@@ -223,7 +223,7 @@ LoopFiles:
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
 			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
+				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
 						archive.SubArchives = make(map[string]*models.Archive)
@@ -254,7 +254,7 @@ LoopFiles:
 		}
 		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
 		archive.Files = append(archive.Files, &entry)
-		archive.DecompressedSize += uint64(header.Size)
+		archive.DecompressedSize += int64(header.Size)
 		if header.Typeflag != tar.TypeReg {
 			continue LoopFiles
 		}
@@ -298,7 +298,7 @@ LoopFiles:
 		case matchers.TypeZip:
 			content, err := ioutil.ReadAll(newReader)
 			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), uint64(len(content)), logger)
+				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
 				if err == nil {
 					if archive.SubArchives == nil {
 						archive.SubArchives = make(map[string]*models.Archive)

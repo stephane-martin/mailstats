@@ -410,6 +410,19 @@
   version = "v0.6.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:aa3d8d42865c42626b5c1add193692d045b3188b1479f0a0a88690d21fe20083"
+  name = "github.com/mailru/easyjson"
+  packages = [
+    ".",
+    "buffer",
+    "jlexer",
+    "jwriter",
+  ]
+  pruneopts = "UT"
+  revision = "60711f1a8329503b04e1c88535f419d0bb440bff"
+
+[[projects]]
   digest = "1:c658e84ad3916da105a761660dcaeb01e63416c8ec7bc62256a9b411a05fcd67"
   name = "github.com/mattn/go-colorable"
   packages = ["."]
@@ -520,6 +533,18 @@
   pruneopts = "UT"
   revision = "e6d60cf7ba1f42d86d54cdf5508611c4aafb3970"
   version = "v0.0.1"
+
+[[projects]]
+  digest = "1:995fe8c9729e94587361e836896824337bbceab8030f698a40552b1a63bf2c59"
+  name = "github.com/olivere/elastic"
+  packages = [
+    ".",
+    "config",
+    "uritemplates",
+  ]
+  pruneopts = "UT"
+  revision = "1619150b007041b6dba8aa447f0e2d151cc2b4c5"
+  version = "v6.2.14"
 
 [[projects]]
   digest = "1:2e8bdbc8a11d716dab1bf66d326285d7e5c92fa4c996c1574ba1153e57534b85"
@@ -948,6 +973,7 @@
     "github.com/mvdan/xurls",
     "github.com/nwaples/rardecode",
     "github.com/oklog/ulid",
+    "github.com/olivere/elastic",
     "github.com/oschwald/geoip2-golang",
     "github.com/phalaaxx/milter",
     "github.com/pierrec/lz4",
