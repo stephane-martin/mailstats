@@ -7,13 +7,13 @@ import (
 
 type DummyForwarder struct{}
 
-func (_ DummyForwarder) Forward(_ *models.IncomingMail) {}
+func (_ *DummyForwarder) Forward(_ *models.IncomingMail) {}
 
-func (_ DummyForwarder) Close() error {
+func (_ *DummyForwarder) Close() error {
 	return nil
 }
 
-func (_ DummyForwarder) Start(ctx context.Context) error {
+func (_ *DummyForwarder) Start(ctx context.Context) error {
 	<-ctx.Done()
 	return nil
 }

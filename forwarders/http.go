@@ -40,18 +40,24 @@ func (f *HTTPForwarder) Forward(mail *models.IncomingMail) {
 		_ = w.CloseWithError(err)
 	}()
 	go func() {
-		_, err := f.client.Post(f.url, r, jsonContentTypeHeaders)
+		resp, err := f.client.Post(f.url, r, jsonContentTypeHeaders)
 		if err != nil {
 			f.logger.Warn(
 				"Failed to HTTP forward incoming mail",
 				"uid", ulid.ULID(mail.UID).String(),
 				"error", err,
 			)
+		} else if resp.StatusCode > 299 {
+			f.logger.Warn("HTTP forward not successful",
+				"uid", ulid.ULID(mail.UID).String(),
+				"code", resp.StatusCode,
+			)
 		}
 	}()
 }
 
-func (f *HTTPForwarder) Start(ctx context.Context) error {
+func (_ *HTTPForwarder) Start(ctx context.Context) error {
+	<-ctx.Done()
 	return nil
 }
 

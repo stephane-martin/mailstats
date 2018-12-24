@@ -12,7 +12,7 @@ func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
 	scheme, host, port, username, password := args.Parsed()
 	if host == "" {
 		logger.Info("No forwarding")
-		return DummyForwarder{}, nil
+		return new(DummyForwarder), nil
 	}
 	switch scheme {
 	case "smtp", "smtps":
@@ -28,7 +28,6 @@ func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
 
 
 }
-
 
 type Forwarder interface {
 	Forward(mail *models.IncomingMail)

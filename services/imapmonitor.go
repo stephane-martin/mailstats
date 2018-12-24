@@ -83,8 +83,11 @@ func IMAPMonitorAction(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
 
-	// TODO
-	forwarder := forwarders.DummyForwarder{}
+	forwarder, err := forwarders.Build(args.Forward, logger)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
+	}
+
 	consumer, err := consumers.MakeConsumer(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
