@@ -324,6 +324,25 @@
   version = "v1.8.0"
 
 [[projects]]
+  digest = "1:1a4463b400230c46b19676d74552bf24dfddc5287c0e4f3d86bcfec07ad3e666"
+  name = "github.com/gojektech/heimdall"
+  packages = [
+    ".",
+    "httpclient",
+  ]
+  pruneopts = "UT"
+  revision = "d96502fee6ce808d44580bd44f1a168fa633bd66"
+  version = "v5.0.2"
+
+[[projects]]
+  digest = "1:4f9da36d750deeff2ed82b44b15245337d1a2f1bf8a671c80f97059d7ce8517d"
+  name = "github.com/gojektech/valkyrie"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "6aee720afcdffc337029305c126e0079491063f0"
+  version = "v1.0"
+
+[[projects]]
   digest = "1:97df918963298c287643883209a2c3f642e6593379f97ab400c2a2e219ab647d"
   name = "github.com/golang/protobuf"
   packages = ["proto"]
@@ -961,6 +980,8 @@
     "github.com/go-cmd/cmd",
     "github.com/go-gomail/gomail",
     "github.com/go-redis/redis",
+    "github.com/gojektech/heimdall",
+    "github.com/gojektech/heimdall/httpclient",
     "github.com/h2non/filetype",
     "github.com/h2non/filetype/matchers",
     "github.com/h2non/filetype/types",

@@ -1,28 +1,45 @@
 package utils
 
 import (
+	"github.com/gojektech/heimdall"
+	"github.com/gojektech/heimdall/httpclient"
 	"net"
 	"net/http"
 	"time"
 )
 
-func NewHTTPClient(timeout time.Duration) *http.Client {
+func NewHTTPClient(timeout time.Duration, maxConns int, retries int) *httpclient.Client {
 	tr := &http.Transport{
-		DisableCompression: true,
-		MaxIdleConns: 16,
-		MaxIdleConnsPerHost: 8,
-		IdleConnTimeout: 30 * time.Second,
-		ResponseHeaderTimeout: timeout,
+		MaxConnsPerHost:       maxConns,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 2 * time.Second,
-		Proxy: nil,
+		ExpectContinueTimeout: 1 * time.Second,
+		Proxy:                 http.ProxyFromEnvironment,
+		DisableCompression:    true,
 		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
+			Timeout:   30 * time.Second,
 			KeepAlive: 30 * time.Second,
 			DualStack: true,
 		}).DialContext,
 	}
-	return &http.Client{Transport: tr}
+
+	if retries > 0 {
+		initialPause := time.Second
+		maxPause := 30 * time.Second
+		jitter := 100 * time.Millisecond
+		backoff := heimdall.NewExponentialBackoff(initialPause, maxPause, 2, jitter)
+		retrier := heimdall.NewRetrier(backoff)
+
+		return httpclient.NewClient(
+			httpclient.WithHTTPClient(&http.Client{Transport: tr, Timeout: timeout}),
+			httpclient.WithRetrier(retrier),
+			httpclient.WithRetryCount(retries),
+		)
+	}
+
+	return httpclient.NewClient(
+		httpclient.WithHTTPClient(&http.Client{Transport: tr, Timeout: timeout}),
+	)
+
 }
-
-

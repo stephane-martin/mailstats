@@ -7,6 +7,7 @@ import (
 	"github.com/olivere/elastic"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
+	"net/http"
 	"time"
 )
 
@@ -17,7 +18,9 @@ type ElasticsearchConsumer struct {
 }
 
 func NewElasticsearchConsumer(urls []string, indexName string, logger log15.Logger) (*ElasticsearchConsumer, error) {
-	httpClient := utils.NewHTTPClient(10 * time.Second)
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
 
 	c, err := elastic.NewClient(
 		elastic.SetErrorLog(&utils.ElasticErrorLogger{Logger: logger}),

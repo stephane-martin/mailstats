@@ -35,8 +35,3 @@ func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
 		return nil, errors.New("unknown consumer type")
 	}
 }
-
-
-
-
-

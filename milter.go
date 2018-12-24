@@ -65,8 +65,17 @@ func (m *milterMessage) make() *models.IncomingMail {
 
 type StatsMilter struct {
 	message   milterMessage
-	collector collectors.Collector
+	Collector collectors.Collector
+	Forwarder forwarders.Forwarder
 	stop      <-chan struct{}
+}
+
+func newStatsMilter(ctx context.Context, collector collectors.Collector, forwarder forwarders.Forwarder) *StatsMilter {
+	return &StatsMilter{
+		Collector: collector,
+		Forwarder: forwarder,
+		stop: ctx.Done(),
+	}
 }
 
 func (e *StatsMilter) Helo(name string, m *milter.Modifier) (milter.Response, error) {
@@ -116,7 +125,9 @@ func (e *StatsMilter) BodyChunk(chunk []byte, m *milter.Modifier) (milter.Respon
 }
 
 func (e *StatsMilter) Body(m *milter.Modifier) (milter.Response, error) {
-	err := e.collector.Push(e.stop, e.message.make())
+	incoming := e.message.make()
+	e.Forwarder.Forward(incoming)
+	err := e.Collector.Push(e.stop, incoming)
 	if err == nil {
 		return milter.RespAccept, nil
 	}
@@ -179,11 +190,11 @@ func MilterAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
+		return ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
 	})
 
 	g.Go(func() error {
-		return StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)
+		return StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, forwarder, logger)
 	})
 
 	g.Go(func() error {
@@ -195,7 +206,7 @@ func MilterAction(c *cli.Context) error {
 	g.Go(func() error {
 		logger.Info("Starting Milter service")
 		err := milter.RunServer(listener, func() (milter.Milter, milter.OptAction, milter.OptProtocol) {
-			return &StatsMilter{collector: collector, stop: ctx.Done()}, 0, 0
+			return newStatsMilter(ctx, collector, forwarder), 0, 0
 		})
 		logger.Info("Service Milter stopped")
 		return err

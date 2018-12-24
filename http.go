@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
@@ -238,7 +239,7 @@ func (w *log15Writer) Write(b []byte) (int, error) {
 	return l, nil
 }
 
-func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) error {
+func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, forwarder forwarders.Forwarder, logger log15.Logger) error {
 	if args.ListenPort <= 0 {
 		return nil
 	}
@@ -568,7 +569,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				}
 			}
 
-			infos := &models.IncomingMail{
+			incoming := &models.IncomingMail{
 				BaseInfos: models.BaseInfos{
 					TimeReported: now,
 					Addr:         c.ClientIP(),
@@ -578,13 +579,14 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				Data: []byte(message),
 			}
 			if sender != nil {
-				infos.MailFrom = sender.Address
+				incoming.MailFrom = sender.Address
 			}
 			for _, recipient := range recipients {
-				infos.RcptTo = append(infos.RcptTo, recipient.Address)
+				incoming.RcptTo = append(incoming.RcptTo, recipient.Address)
 			}
 			if enqueue {
-				err := collector.PushCtx(ctx, infos)
+				forwarder.Forward(incoming)
+				err := collector.PushCtx(ctx, incoming)
 				if err != nil {
 					logger.Error("Error pushing HTTP message to collector", "error", err)
 					c.Status(500)
@@ -595,8 +597,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			parser := NewParser(logger)
 			//noinspection GoUnhandledErrorResult
 			defer parser.Close()
-			infos.UID = utils.NewULID()
-			features, err := parser.Parse(infos)
+			incoming.UID = utils.NewULID()
+			features, err := parser.Parse(incoming)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
 				c.Status(500)
@@ -739,7 +741,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				c.Status(500)
 				return
 			}
-			infos := &models.IncomingMail{
+			incoming := &models.IncomingMail{
 				BaseInfos: models.BaseInfos{
 					TimeReported: now,
 					Addr:         c.ClientIP(),
@@ -749,13 +751,14 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				Data: b.Bytes(),
 			}
 			if len(from) > 0 {
-				infos.MailFrom = from
+				incoming.MailFrom = from
 			}
 			for _, addr := range to {
-				infos.RcptTo = append(infos.RcptTo, addr.Address)
+				incoming.RcptTo = append(incoming.RcptTo, addr.Address)
 			}
 			if enqueue {
-				err := collector.PushCtx(ctx, infos)
+				forwarder.Forward(incoming)
+				err := collector.PushCtx(ctx, incoming)
 				if err != nil {
 					logger.Error("Error pushing HTTP message to collector", "error", err)
 					c.Status(500)
@@ -766,8 +769,8 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 			parser := NewParser(logger)
 			//noinspection GoUnhandledErrorResult
 			defer parser.Close()
-			infos.UID = utils.NewULID()
-			features, err := parser.Parse(infos)
+			incoming.UID = utils.NewULID()
+			features, err := parser.Parse(incoming)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
 				c.Status(500)

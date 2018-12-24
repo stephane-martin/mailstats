@@ -25,37 +25,51 @@ import (
 )
 
 type Backend struct {
-	Collector collectors.Collector
-	Stop      <-chan struct{}
-	Logger    log15.Logger
 	Port      int
+	Collector collectors.Collector
+	Forwarder forwarders.Forwarder
+	Logger    log15.Logger
+	Stop      <-chan struct{}
+}
+
+func newBackend(ctx context.Context, port int, collector collectors.Collector, forwarder forwarders.Forwarder, logger log15.Logger) *Backend {
+	return &Backend{
+		Port: port,
+		Collector: collector,
+		Forwarder: forwarder,
+		Logger: logger,
+		Stop: ctx.Done(),
+	}
 }
 
 func (b *Backend) Login(username, password string) (smtp.User, error) {
 	b.Logger.Debug("Authenticating user")
 	return &User{
-		Collector: b.Collector,
-		Stop:      b.Stop,
-		Logger:    b.Logger,
 		Port:      b.Port,
+		Collector: b.Collector,
+		Forwarder: b.Forwarder,
+		Logger:    b.Logger,
+		Stop:      b.Stop,
 	}, nil
 }
 
 func (b *Backend) AnonymousLogin() (smtp.User, error) {
 	b.Logger.Debug("Anonymous user")
 	return &User{
-		Collector: b.Collector,
-		Stop:      b.Stop,
-		Logger:    b.Logger,
 		Port:      b.Port,
+		Collector: b.Collector,
+		Forwarder: b.Forwarder,
+		Logger:    b.Logger,
+		Stop:      b.Stop,
 	}, nil
 }
 
 type User struct {
-	Collector collectors.Collector
-	Stop      <-chan struct{}
-	Logger    log15.Logger
 	Port      int
+	Collector collectors.Collector
+	Forwarder forwarders.Forwarder
+	Logger    log15.Logger
+	Stop      <-chan struct{}
 }
 
 func (u *User) Send(from string, to []string, r io.Reader) error {
@@ -73,6 +87,7 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 		},
 		Data: b,
 	}
+	u.Forwarder.Forward(m)
 	return u.Collector.Push(u.Stop, m)
 }
 
@@ -123,9 +138,7 @@ func SMTPAction(c *cli.Context) error {
 
 	g, ctx := errgroup.WithContext(gctx)
 
-	b := &Backend{Collector: collector, Stop: ctx.Done(), Logger: logger, Port: args.SMTP.ListenPort}
-	s := smtp.NewServer(b)
-
+	s := smtp.NewServer(newBackend(ctx, args.SMTP.ListenPort, collector, forwarder, logger))
 	s.Domain = "localhost"
 	s.MaxIdleSeconds = args.SMTP.MaxIdle
 	s.MaxMessageBytes = args.SMTP.MaxMessageSize
@@ -157,7 +170,7 @@ func SMTPAction(c *cli.Context) error {
 
 	if args.SMTP.Inetd {
 		g.Go(func() error {
-			err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
+			err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
 			_ = consumer.Close()
 			_ = forwarder.Close()
 			_ = parser.Close()
@@ -184,13 +197,13 @@ func SMTPAction(c *cli.Context) error {
 	listener = utils.WrapListener(listener, "SMTP", logger)
 
 	g.Go(func() error {
-		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)
+		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, forwarder, logger)
 		logger.Info("StartHTTP has returned", "error", err)
 		return err
 	})
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
+		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})

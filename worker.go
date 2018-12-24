@@ -42,7 +42,13 @@ type WorkerClient struct {
 }
 
 func NewWorker(secret *memguard.LockedBuffer, logger log15.Logger) *WorkerClient {
-	return &WorkerClient{HTTP: utils.NewHTTPClient(time.Minute), secret: secret, uid: utils.NewULID(), logger: logger, requestID: 0}
+	return &WorkerClient{
+		HTTP: &http.Client{Timeout: 30*time.Second},
+		secret: secret,
+		uid: utils.NewULID(),
+		logger: logger,
+		requestID: 0,
+	}
 }
 
 func (w *WorkerClient) ping(ctx context.Context) bool {

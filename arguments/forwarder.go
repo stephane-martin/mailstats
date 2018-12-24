@@ -26,6 +26,15 @@ func (args ForwardArgs) Parsed() (scheme, host, port, username, password string)
 		strings.TrimSpace(password)
 }
 
+
+
+var fwdSchemes = map[string]struct{}{
+	"smtp":  {},
+	"smtps": {},
+	"http":  {},
+	"https": {},
+}
+
 func (args *ForwardArgs) Verify() error {
 	if args.URL == "" {
 		return nil
@@ -34,7 +43,8 @@ func (args *ForwardArgs) Verify() error {
 	v := verifier.New()
 	v.That(err == nil, "Invalid SMTP forward URL")
 	scheme := strings.ToLower(strings.TrimSpace(u.Scheme))
-	v.That(scheme == "smtp" || scheme == "smtps", "Forward URL scheme is not smtp")
+	_, ok := fwdSchemes[scheme]
+	v.That(ok, "Forward URL scheme is not allowed")
 	v.That(len(u.Host) > 0, "Forward host is empty")
 	h, p, err := net.SplitHostPort(u.Host)
 	v.That(err == nil, "Forward host must be host:port")

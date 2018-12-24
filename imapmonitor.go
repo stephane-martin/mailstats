@@ -82,6 +82,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
 
+	// TODO
 	forwarder := forwarders.DummyForwarder{}
 	consumer, err := consumers.MakeConsumer(*args, logger)
 	if err != nil {
@@ -157,13 +158,13 @@ func IMAPMonitorAction(c *cli.Context) error {
 	g, ctx := errgroup.WithContext(gctx)
 
 	g.Go(func() error {
-		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, logger)
+		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, forwarder, logger)
 		logger.Info("StartHTTP has returned", "error", err)
 		return err
 	})
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
+		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})
@@ -253,6 +254,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 				},
 				Data: body,
 			}
+			forwarder.Forward(incoming)
 			err = collector.PushCtx(ctx, incoming)
 			if err != nil {
 				return err

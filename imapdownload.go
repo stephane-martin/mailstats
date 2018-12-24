@@ -9,7 +9,6 @@ import (
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
@@ -143,8 +142,6 @@ func IMAPDownloadAction(c *cli.Context) error {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
 	}
 
-	forwarder := forwarders.DummyForwarder{}
-
 	consumer, err := consumers.MakeConsumer(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
@@ -169,7 +166,7 @@ func IMAPDownloadAction(c *cli.Context) error {
 	defer parser.Close()
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, forwarder, args.NbParsers, logger)
+		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})

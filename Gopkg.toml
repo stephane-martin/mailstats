@@ -190,6 +190,10 @@
     name = "github.com/olivere/elastic"
     version = "6.2.14"
 
+[[constraint]]
+    name = "github.com/gojektech/heimdall"
+    version = "5.0.2"
+
 [prune]
 	go-tests = true
 	unused-packages = true

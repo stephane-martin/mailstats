@@ -29,7 +29,6 @@ import (
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/extractors"
-	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/xi2/xz"
@@ -665,7 +664,7 @@ func StringDecode(text string) (string, error) {
 	return strings.Join(words, " "), nil
 }
 
-func ParseMails(ctx context.Context, collector collectors.Collector, parser Parser, consumer consumers.Consumer, forwarder forwarders.Forwarder, nbParsers int, logger log15.Logger) error {
+func ParseMails(ctx context.Context, collector collectors.Collector, parser Parser, consumer consumers.Consumer, nbParsers int, logger log15.Logger) error {
 	g, lCtx := errgroup.WithContext(ctx)
 
 	if nbParsers == 0 {
@@ -688,7 +687,6 @@ func ParseMails(ctx context.Context, collector collectors.Collector, parser Pars
 				if incoming == nil {
 					continue L
 				}
-				forwarder.Push(*incoming)
 				features, err := parser.Parse(incoming)
 				collector.ACK(incoming.UID)
 				if err != nil {
