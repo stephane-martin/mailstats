@@ -9,8 +9,8 @@ DATAFILES = $(shell find data -type f)
 BINARY=mailstats
 FULL=github.com/stephane-martin/mailstats
 VERSION=0.1.0
-LDFLAGS=-ldflags '-X main.Version=${VERSION} -X main.GinMode=debug'
-LDFLAGS_RELEASE=-ldflags '-w -s -X main.Version=${VERSION} -X main.GinMode=release'
+LDFLAGS=-ldflags '-X main.Version=${VERSION} -X services.GinMode=debug'
+LDFLAGS_RELEASE=-ldflags '-w -s -X main.Version=${VERSION} -X services.GinMode=release'
 
 debug: ${BINARY}_debug
 release: ${BINARY}

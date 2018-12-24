@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"bytes"
@@ -9,6 +9,7 @@ import (
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"net"
 	"net/textproto"
@@ -173,7 +174,7 @@ func MilterAction(c *cli.Context) error {
 		}
 	}()
 
-	parser := NewParser(logger)
+	theparser := parser.NewParser(logger)
 	collector, err := collectors.NewCollector(*args, logger)
 	if err != nil {
 		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
@@ -190,7 +191,7 @@ func MilterAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
+		return parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
 	})
 
 	g.Go(func() error {
@@ -214,7 +215,7 @@ func MilterAction(c *cli.Context) error {
 
 	err = g.Wait()
 	_ = collector.Close()
-	_ = parser.Close()
+	_ = theparser.Close()
 	_ = forwarder.Close()
 	_ = consumer.Close()
 	_ = collG.Wait()

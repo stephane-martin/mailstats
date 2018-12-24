@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"context"
@@ -14,6 +14,7 @@ import (
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
@@ -148,7 +149,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 		}
 	}()
 
-	parser := NewParser(logger)
+	theparser := parser.NewParser(logger)
 
 	var collG errgroup.Group
 	collG.Go(func() error {
@@ -164,7 +165,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
+		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})
@@ -303,7 +304,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 
 	err = g.Wait()
 	_ = collector.Close()
-	_ = parser.Close()
+	_ = theparser.Close()
 	_ = forwarder.Close()
 	_ = consumer.Close()
 	_ = collG.Wait()

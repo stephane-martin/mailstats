@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/russross/blackfriday"
+	"github.com/stephane-martin/mailstats/actions"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/services"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"io"
@@ -217,12 +219,12 @@ func MakeApp() *cli.App {
 		{
 			Name:   "worker",
 			Usage:  "start worker",
-			Action: WorkerAction,
+			Action: services.WorkerAction,
 		},
 		{
 			Name:   "milter",
 			Usage:  "start as a Postfix milter",
-			Action: MilterAction,
+			Action: services.MilterAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
@@ -241,7 +243,7 @@ func MakeApp() *cli.App {
 		{
 			Name:   "smtp",
 			Usage:  "start as a SMTP service",
-			Action: SMTPAction,
+			Action: services.SMTPAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{
 					Name:   "laddr,l",
@@ -284,7 +286,7 @@ func MakeApp() *cli.App {
 					EnvVar: "MAILSTATS_MBOX_FILE",
 				},
 			},
-			Action: MBoxAction,
+			Action: actions.MBoxAction,
 		},
 		{
 			Name:  "maildir",
@@ -296,7 +298,7 @@ func MakeApp() *cli.App {
 					EnvVar: "MAILSTATS_MAILDIR",
 				},
 			},
-			Action: MaildirAction,
+			Action: actions.MaildirAction,
 		},
 
 		{
@@ -316,7 +318,7 @@ func MakeApp() *cli.App {
 					EnvVar: "MAILSTATS_IMAP_DOWNLOAD_MAX",
 				},
 			},
-			Action: IMAPDownloadAction,
+			Action: actions.IMAPDownloadAction,
 		},
 		{
 			Name:  "imapmonitor",
@@ -329,7 +331,7 @@ func MakeApp() *cli.App {
 					EnvVar: "MAILSTATS_IMAP_MONITOR_URI",
 				},
 			},
-			Action: IMAPMonitorAction,
+			Action: services.IMAPMonitorAction,
 		},
 		{
 			Name:  "metadata",

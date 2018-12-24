@@ -1,4 +1,4 @@
-package main
+package actions
 
 import (
 	"context"
@@ -10,6 +10,7 @@ import (
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"golang.org/x/sync/errgroup"
@@ -161,12 +162,12 @@ func IMAPDownloadAction(c *cli.Context) error {
 
 	g, ctx := errgroup.WithContext(gctx)
 
-	parser := NewParser(logger)
+	theparser := parser.NewParser(logger)
 	//noinspection GoUnhandledErrorResult
-	defer parser.Close()
+	defer theparser.Close()
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
+		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})

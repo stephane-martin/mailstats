@@ -1,9 +1,10 @@
-package main
+package actions
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/stephane-martin/mailstats/parser"
 	"io"
 	"os"
 	"os/signal"
@@ -50,12 +51,12 @@ func MBoxAction(c *cli.Context) error {
 
 	g, ctx := errgroup.WithContext(gctx)
 
-	parser := NewParser(logger)
+	theparser := parser.NewParser(logger)
 	//noinspection GoUnhandledErrorResult
-	defer parser.Close()
+	defer theparser.Close()
 
 	g.Go(func() error {
-		err := ParseMails(ctx, collector, parser, consumer, args.NbParsers, logger)
+		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
 		logger.Info("ParseMails has returned", "error", err)
 		return err
 	})

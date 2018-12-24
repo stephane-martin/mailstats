@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"bytes"
@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"io"
 	"io/ioutil"
@@ -44,6 +45,8 @@ import (
 var pakeRecipients *PakeRecipients
 var pakeSessionKeys *SessionKeyStore
 var increments *CurrentIncrements
+
+var GinMode string
 
 func init() {
 	pakeRecipients = NewPakeRecipients()
@@ -594,11 +597,11 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				return
 			}
 
-			parser := NewParser(logger)
+			theparser := parser.NewParser(logger)
 			//noinspection GoUnhandledErrorResult
-			defer parser.Close()
+			defer theparser.Close()
 			incoming.UID = utils.NewULID()
-			features, err := parser.Parse(incoming)
+			features, err := theparser.Parse(incoming)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
 				c.Status(500)
@@ -766,11 +769,11 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, secret *memguard.Lo
 				return
 			}
 
-			parser := NewParser(logger)
+			theparser := parser.NewParser(logger)
 			//noinspection GoUnhandledErrorResult
-			defer parser.Close()
+			defer theparser.Close()
 			incoming.UID = utils.NewULID()
-			features, err := parser.Parse(incoming)
+			features, err := theparser.Parse(incoming)
 			if err != nil {
 				logger.Warn("Error calculating features", "error", err)
 				c.Status(500)

@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/parser"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -380,9 +381,9 @@ Ping:
 	}
 	logger.Info("Worker is authenticated")
 
-	parser := NewParser(logger)
+	theparser := parser.NewParser(logger)
 	//noinspection GoUnhandledErrorResult
-	defer parser.Close()
+	defer theparser.Close()
 
 	ch := make(chan *models.IncomingMail)
 
@@ -414,7 +415,7 @@ Ping:
 	for i := 0; i < nbParsers; i++ {
 		g.Go(func() error {
 			for m := range ch {
-				features, parseErr := parser.Parse(m)
+				features, parseErr := theparser.Parse(m)
 
 				g.Go(func() error {
 					for {
