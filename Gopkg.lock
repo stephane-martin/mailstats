@@ -47,7 +47,7 @@
   version = "v3.0.0"
 
 [[projects]]
-  digest = "1:bb9a12729bb4b84e37787675f48de96f2e2c60d9a771af7f98155c4205c24d51"
+  digest = "1:2b360d494a5820a8da2a61bec8f7fa1c8b67bca373987fd2387a5d3336a2b19d"
   name = "github.com/alecthomas/chroma"
   packages = [
     ".",
@@ -84,8 +84,8 @@
     "styles",
   ]
   pruneopts = "UT"
-  revision = "5a473179cfe450c6d80407452c241428de387f6b"
-  version = "v0.6.0"
+  revision = "3b3f74c6a5979f78da47b884b3e3895c1df1465b"
+  version = "v0.6.1"
 
 [[projects]]
   digest = "1:47fd1237abeac1246a1e690f3c6c8e8c5b963b5bf946be4f9c8210453a502a11"
@@ -360,7 +360,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:36fa85e032e5aac57d4957b73477b5f245df3621530efd48a6a176d0b284e844"
+  digest = "1:0ee2c8a10f5becd12ff78775014bb57d9673cec944cfda13fb1028539fd99890"
   name = "github.com/h2non/filetype"
   packages = [
     ".",
@@ -368,7 +368,7 @@
     "types",
   ]
   pruneopts = "UT"
-  revision = "9b67683b26254dc204d4b0003ffa77aa8192d818"
+  revision = "dcfbf481c8c7b4d8a1622476743d9def9b136f8f"
 
 [[projects]]
   branch = "master"
@@ -638,7 +638,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:db712fde5d12d6cdbdf14b777f0c230f4ff5ab0be8e35b239fc319953ed577a4"
+  digest = "1:33c81bf709f084827a560e14415b1d7001a6d1d6fa4bec2cc2e60b84ecbc0e0a"
   name = "github.com/prometheus/common"
   packages = [
     "expfmt",
@@ -646,7 +646,7 @@
     "model",
   ]
   pruneopts = "UT"
-  revision = "4724e9255275ce38f7179b2478abeae4e28c904f"
+  revision = "67670fe90761d7ff18ec1d640135e53b9198328f"
 
 [[projects]]
   branch = "master"
@@ -824,7 +824,7 @@
     "html/atom",
   ]
   pruneopts = "UT"
-  revision = "e147a9138326bc0e9d4e179541ffd8af41cff8a9"
+  revision = "927f97764cc334a6575f4b7a1584a147864d5723"
 
 [[projects]]
   branch = "master"
@@ -832,18 +832,18 @@
   name = "golang.org/x/sync"
   packages = ["errgroup"]
   pruneopts = "UT"
-  revision = "42b317875d0fa942474b76e1b46a6060d720ae6e"
+  revision = "37e7f081c4d4c64e13b10787722085407fe5d15f"
 
 [[projects]]
   branch = "master"
-  digest = "1:ba8cbf57cfd92d5f8592b4aca1a35d92c162363d32aeabd5b12555f8896635e7"
+  digest = "1:3d5e79e10549fd9119cbefd614b6d351ef5bd0be2f2b103a4199788e784cbc68"
   name = "golang.org/x/sys"
   packages = [
     "unix",
     "windows",
   ]
   pruneopts = "UT"
-  revision = "4d1cda033e0619309c606fc686de3adcf599539e"
+  revision = "b4a75ba826a64a70990f11a225237acd6ef35c9f"
 
 [[projects]]
   branch = "master"
@@ -878,7 +878,7 @@
 
 [[projects]]
   branch = "master"
-  digest = "1:5b2be400178fef3ca1cfada246f93548b6384982356d0b6a2705e626a6355911"
+  digest = "1:cbe36f87539a6135d985be923b71c8199b68c3cdf8284c9e3c2ac72063b987d6"
   name = "gonum.org/v1/gonum"
   packages = [
     "blas",
@@ -895,7 +895,7 @@
     "mat",
   ]
   pruneopts = "UT"
-  revision = "44a6721e0d61ae419d050c8542f1bea359d5ec24"
+  revision = "b545e3e77e9e3d1584db774290c452414071f0c6"
 
 [[projects]]
   branch = "v3"
