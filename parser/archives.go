@@ -13,6 +13,7 @@ import (
 	"io"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 
 	"github.com/h2non/filetype/matchers"
 	"github.com/h2non/filetype/types"
@@ -20,8 +21,6 @@ import (
 	"github.com/nwaples/rardecode"
 	"github.com/xi2/xz"
 )
-
-// TODO: refactor
 
 func AnalyzeArchive(typ types.Type, reader *bytes.Reader, size int64, logger log15.Logger) (*models.Archive, error) {
 	switch typ {
@@ -84,72 +83,26 @@ func AnalyzeZip(reader io.ReaderAt, size int64, logger log15.Logger) (*models.Ar
 
 LoopFiles:
 	for _, f := range zipReader.File {
-		entry := models.ArchiveFile{Name: f.Name, Extension: filepath.Ext(f.Name)}
-		archive.Files = append(archive.Files, &entry)
-		archive.DecompressedSize += int64(f.UncompressedSize64)
 		if f.FileInfo().IsDir() {
 			continue LoopFiles
 		}
+		archive.DecompressedSize += int64(f.UncompressedSize64)
 
 		fileReader, err := f.Open()
 		if err != nil {
 			logger.Warn("Error reading file from ZIP", "error", err)
 			continue LoopFiles
 		}
-		t, newReader, err := utils.GuessReader(f.Name, fileReader)
-		if err != nil {
-			logger.Info("Failed to detect file type from ZIP archive", "error", err)
-			_ = fileReader.Close()
-			continue LoopFiles
-		}
-		if extractors.IsExecutable(t.MIME.Value) {
+		entry, exe, subArchive := analyzeEntry(f.Name, fileReader, logger)
+		archive.Files = append(archive.Files, entry)
+		if exe {
 			archive.ContainsExecutable = true
 		}
-
-		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
-		if err != nil {
-			logger.Info("Failed to decompress file from ZIP archive", "error", err)
-			_ = fileReader.Close()
-			continue LoopFiles
-		}
-		entry.Type = t.MIME.Value
-		switch t {
-		case matchers.TypeTar:
-			subArchive, err := AnalyzeTar(newReader, logger)
-			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[f.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
+		if subArchive != nil {
+			if archive.SubArchives == nil {
+				archive.SubArchives = make(map[string]*models.Archive)
 			}
-		case matchers.TypeRar:
-			subArchive, err := AnalyzeRar(newReader, logger)
-			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[f.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
-			}
-		case matchers.TypeZip:
-			content, err := ioutil.ReadAll(newReader)
-			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
-				if err == nil {
-					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*models.Archive)
-					}
-					archive.SubArchives[f.Name] = subArchive
-					if subArchive.ContainsExecutable {
-						archive.ContainsExecutable = true
-					}
-				}
-			}
+			archive.SubArchives[f.Name] = subArchive
 		}
 		_ = fileReader.Close()
 	}
@@ -174,67 +127,25 @@ LoopFiles:
 		if err != nil {
 			return archive, err
 		}
-		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
-		archive.Files = append(archive.Files, &entry)
-		if !header.UnKnownSize {
-			archive.DecompressedSize += int64(header.UnPackedSize)
-		}
 		if header.IsDir {
 			continue LoopFiles
 		}
-
-		t, newReader, err := utils.GuessReader(header.Name, rarReader)
-		if err != nil {
-			logger.Info("Failed to detect file type from RAR archive", "error", err)
-			continue LoopFiles
+		if !header.UnKnownSize {
+			archive.DecompressedSize += int64(header.UnPackedSize)
 		}
-		if extractors.IsExecutable(t.MIME.Value) {
+
+		entry, exe, subArchive := analyzeEntry(header.Name, rarReader, logger)
+		archive.Files = append(archive.Files, entry)
+		if exe {
 			archive.ContainsExecutable = true
 		}
-		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
-		if err != nil {
-			logger.Info("Failed to decompress file from RAR archive", "error", err)
-			continue LoopFiles
+		if subArchive != nil {
+			if archive.SubArchives == nil {
+				archive.SubArchives = make(map[string]*models.Archive)
+			}
+			archive.SubArchives[header.Name] = subArchive
 		}
-		entry.Type = t.MIME.Value
-		switch t {
-		case matchers.TypeTar:
-			subArchive, err := AnalyzeTar(newReader, logger)
-			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[header.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
-			}
-		case matchers.TypeRar:
-			subArchive, err := AnalyzeRar(newReader, logger)
-			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[header.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
-			}
-		case matchers.TypeZip:
-			content, err := ioutil.ReadAll(newReader)
-			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
-				if err == nil {
-					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*models.Archive)
-					}
-					archive.SubArchives[header.Name] = subArchive
-					if subArchive.ContainsExecutable {
-						archive.ContainsExecutable = true
-					}
-				}
-			}
-		}
+
 	}
 }
 
@@ -252,63 +163,69 @@ LoopFiles:
 		if err != nil {
 			return archive, err
 		}
-		entry := models.ArchiveFile{Name: header.Name, Extension: filepath.Ext(header.Name)}
-		archive.Files = append(archive.Files, &entry)
-		archive.DecompressedSize += int64(header.Size)
 		if header.Typeflag != tar.TypeReg {
 			continue LoopFiles
 		}
-		t, newReader, err := utils.GuessReader(header.Name, tarReader)
-		if err != nil {
-			logger.Info("Failed to detect file type from TAR archive", "error", err)
-			continue LoopFiles
-		}
-		if extractors.IsExecutable(t.MIME.Value) {
+		archive.DecompressedSize += int64(header.Size)
+
+		entry, exe, subArchive := analyzeEntry(header.Name, tarReader, logger)
+		archive.Files = append(archive.Files, entry)
+		if exe {
 			archive.ContainsExecutable = true
 		}
-		t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
-		if err != nil {
-			logger.Info("Failed to decompress file from TAR archive", "error", err)
-			continue LoopFiles
+		if subArchive != nil {
+			if archive.SubArchives == nil {
+				archive.SubArchives = make(map[string]*models.Archive)
+			}
+			archive.SubArchives[header.Name] = subArchive
 		}
-		entry.Type = t.MIME.Value
-		switch t {
-		case matchers.TypeTar:
-			subArchive, err := AnalyzeTar(newReader, logger)
+	}
+}
+
+
+func analyzeEntry(filename string, reader io.Reader, logger log15.Logger) (entry *models.ArchiveFile, exe bool, subArchive *models.Archive) {
+	entry = &models.ArchiveFile{
+		Name: filename,
+		Extension: strings.Trim(filepath.Ext(filename), "."),
+	}
+	t, newReader, err := utils.GuessReader(filename, reader)
+	if err != nil {
+		logger.Info("Failed to detect file type from RAR archive", "error", err)
+		return entry, exe, subArchive
+	}
+	entry.Type = t.MIME.Value
+	if extractors.IsExecutable(entry.Type) {
+		exe = true
+	}
+	t, newReader, entry.Compression, err = replaceCompressed(t, newReader, logger)
+	if err != nil {
+		logger.Info("Failed to decompress file from archive", "error", err)
+		return entry, exe, subArchive
+	}
+	entry.Type = t.MIME.Value
+	switch t {
+	case matchers.TypeTar:
+		sub, err := AnalyzeTar(newReader, logger)
+		if err == nil {
+			subArchive = sub
+		}
+	case matchers.TypeRar:
+		sub, err := AnalyzeRar(newReader, logger)
+		if err == nil {
+			subArchive = sub
+		}
+	case matchers.TypeZip:
+		content, err := ioutil.ReadAll(newReader)
+		if err == nil {
+			sub, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
 			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[header.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
-			}
-		case matchers.TypeRar:
-			subArchive, err := AnalyzeRar(newReader, logger)
-			if err == nil {
-				if archive.SubArchives == nil {
-					archive.SubArchives = make(map[string]*models.Archive)
-				}
-				archive.SubArchives[header.Name] = subArchive
-				if subArchive.ContainsExecutable {
-					archive.ContainsExecutable = true
-				}
-			}
-		case matchers.TypeZip:
-			content, err := ioutil.ReadAll(newReader)
-			if err == nil {
-				subArchive, err := AnalyzeZip(bytes.NewReader(content), int64(len(content)), logger)
-				if err == nil {
-					if archive.SubArchives == nil {
-						archive.SubArchives = make(map[string]*models.Archive)
-					}
-					archive.SubArchives[header.Name] = subArchive
-					if subArchive.ContainsExecutable {
-						archive.ContainsExecutable = true
-					}
-				}
+				subArchive = sub
 			}
 		}
 	}
+	if subArchive != nil && subArchive.ContainsExecutable {
+		exe = true
+	}
+	return entry, exe, subArchive
+
 }

@@ -25,12 +25,12 @@ func JSONMarshal(v interface{}) ([]byte, error) {
 	return b.Bytes(), err
 }
 
-func JSONString(v interface{}) (string, error) {
+func JSONString(v interface{}) string {
 	var s strings.Builder
 	enc := JSONEncoder(&s)
 	enc.SetIndent("", "  ")
-	err := enc.Encode(v)
-	return s.String(), err
+	_ = enc.Encode(v)
+	return s.String()
 }
 
 func Snake(s string) string {

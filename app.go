@@ -17,10 +17,6 @@ import (
 	"strings"
 )
 
-func ijson(obj interface{}) string {
-	b, _ := json.MarshalIndent(obj, "", "  ")
-	return string(b)
-}
 
 func MakeApp() *cli.App {
 	app := cli.NewApp()
@@ -218,7 +214,7 @@ func MakeApp() *cli.App {
 		},
 		{
 			Name:   "worker",
-			Usage:  "start worker",
+			Usage:  "start external worker",
 			Action: services.WorkerAction,
 			Flags: []cli.Flag{
 				cli.StringFlag{
@@ -362,19 +358,19 @@ func MakeApp() *cli.App {
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
-					fmt.Println(ijson(meta))
+					fmt.Println(utils.JSONString(meta))
 				case ".docx", ".docm":
 					_, meta, _, err := extractors.ConvertDocx(filename)
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
-					fmt.Println(ijson(meta))
+					fmt.Println(utils.JSONString(meta))
 				case ".odt":
 					_, meta, err := extractors.ConvertODT(filename)
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
-					fmt.Println(ijson(meta))
+					fmt.Println(utils.JSONString(meta))
 				case ".doc":
 					tool, err := extractors.NewExifToolWrapper()
 					if err != nil {
@@ -386,7 +382,7 @@ func MakeApp() *cli.App {
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
-					fmt.Println(ijson(meta))
+					fmt.Println(utils.JSONString(meta))
 				case ".jpg", ".jpeg", ".png", ".tiff", ".gif", ".webp":
 					tool, err := extractors.NewExifToolWrapper()
 					if err != nil {
@@ -398,7 +394,7 @@ func MakeApp() *cli.App {
 					if err != nil {
 						return cli.NewExitError(err, 2)
 					}
-					fmt.Println(ijson(meta))
+					fmt.Println(utils.JSONString(meta))
 				}
 				return nil
 			},
