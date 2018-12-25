@@ -195,9 +195,18 @@ func MilterAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		return StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, forwarder, logger)
+		err := StartHTTP(ctx, args.HTTP, collector, forwarder, logger)
+		logger.Debug("StartHTTP has returned", "error", err)
+		return err
 	})
 
+	if args.Secret != nil {
+		g.Go(func() error {
+			err := StartMaster(ctx, args.HTTP, args.Secret, collector, consumer, logger)
+			logger.Debug("StartMaster has returned", "error", err)
+			return err
+		})
+	}
 	g.Go(func() error {
 		<-ctx.Done()
 		_ = listener.Close()

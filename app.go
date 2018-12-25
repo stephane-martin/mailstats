@@ -28,16 +28,16 @@ func MakeApp() *cli.App {
 	app.Usage = "generate logs and stats from mail traffic"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:   "http-addr",
-			Usage:  "HTTP listen address",
-			Value:  "127.0.0.1",
-			EnvVar: "MAILSTATS_HTTP_ADDR",
+			Name:   "api-listen-addr",
+			Usage:  "HTTP API listen address",
+			Value:  "127.0.0.1:8080",
+			EnvVar: "MAILSTATS_API_ADDR",
 		},
-		cli.IntFlag{
-			Name:   "http-port",
-			Usage:  "HTTP liten port",
-			Value:  8080,
-			EnvVar: "MAILSTATS_HTTP_PORT",
+		cli.StringFlag{
+			Name: "master-listen-addr",
+			Usage: "When using external workers, the listen address for the master",
+			Value: "127.0.0.1:8081",
+			EnvVar: "MAILSTATS_MASTER_ADDR",
 		},
 		cli.BoolFlag{
 			Name:   "inetd",
@@ -58,7 +58,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "out,o",
 			Value:  "stdout",
-			Usage:  "where to write the results [stdout, stderr, file, redis, syslog, rabbitmq, kafka]",
+			Usage:  "where to write the results [stdout, stderr, file, http, redis, syslog, rabbitmq, kafka]",
 			EnvVar: "MAILSTATS_OUT",
 		},
 		cli.StringFlag{
@@ -88,7 +88,7 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "forward",
 			Value:  "",
-			Usage:  "specify a SMTP connection URL (eg. smtp://127.0.0.1:25) to forward all received messages",
+			Usage:  "HTTP or SMTP connection URL (eg. smtp://127.0.0.1:25) to forward all received messages",
 			EnvVar: "MAILSTATS_FORWARD",
 		},
 		cli.StringFlag{
@@ -118,13 +118,13 @@ func MakeApp() *cli.App {
 		cli.StringFlag{
 			Name:   "secret",
 			Value:  "",
-			Usage:  "the secret used for authentication with workers",
+			Usage:  "the secret used for authentication between master and workers",
 			EnvVar: "MAILSTATS_SECRET",
 		},
 		cli.IntFlag{
 			Name:   "nbparsers",
 			Value:  -1,
-			Usage:  "how many parsers should be started",
+			Usage:  "how many parsers should be started (-1 for number of CPUs)",
 			EnvVar: "MAILSTATS_NBPARSERS",
 		},
 		cli.StringFlag{
@@ -220,6 +220,14 @@ func MakeApp() *cli.App {
 			Name:   "worker",
 			Usage:  "start worker",
 			Action: services.WorkerAction,
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "master",
+					Usage: "Master address",
+					Value: "127.0.0.1:8081",
+					EnvVar: "MAILSTATS_MASTER_ADDR",
+				},
+			},
 		},
 		{
 			Name:   "milter",

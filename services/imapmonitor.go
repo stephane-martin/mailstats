@@ -162,10 +162,18 @@ func IMAPMonitorAction(c *cli.Context) error {
 	g, ctx := errgroup.WithContext(gctx)
 
 	g.Go(func() error {
-		err := StartHTTP(ctx, args.HTTP, args.Secret, collector, consumer, forwarder, logger)
-		logger.Info("StartHTTP has returned", "error", err)
+		err := StartHTTP(ctx, args.HTTP, collector, forwarder, logger)
+		logger.Debug("StartHTTP has returned", "error", err)
 		return err
 	})
+
+	if args.Secret != nil {
+		g.Go(func() error {
+			err := StartMaster(ctx, args.HTTP, args.Secret, collector, consumer, logger)
+			logger.Debug("StartMaster has returned", "error", err)
+			return err
+		})
+	}
 
 	g.Go(func() error {
 		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)

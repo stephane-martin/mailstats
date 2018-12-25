@@ -10,6 +10,7 @@ import (
 	"github.com/stephane-martin/mailstats/parser"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -34,7 +35,17 @@ import (
 )
 
 type WorkerClient struct {
-	HTTP       *http.Client
+	HTTP           *http.Client
+	MasterHostPort string
+
+	PingURL   string
+	SubmitURL string
+	WorkURL   string
+	ByeURL    string
+	ACKURL    string
+	Auth1URL  string
+	Auth2URL  string
+
 	secret     *memguard.LockedBuffer
 	sessionKey *memguard.LockedBuffer
 	uid        ulid.ULID
@@ -42,18 +53,27 @@ type WorkerClient struct {
 	requestID  uint64
 }
 
-func NewWorker(secret *memguard.LockedBuffer, logger log15.Logger) *WorkerClient {
-	return &WorkerClient{
-		HTTP: &http.Client{Timeout: 30*time.Second},
-		secret: secret,
-		uid: utils.NewULID(),
-		logger: logger,
-		requestID: 0,
+func NewWorker(secret *memguard.LockedBuffer, hostport string, logger log15.Logger) *WorkerClient {
+	w := &WorkerClient{
+		HTTP:           &http.Client{Timeout: 30 * time.Second},
+		secret:         secret,
+		uid:            utils.NewULID(),
+		logger:         logger,
+		requestID:      0,
+		MasterHostPort: hostport,
 	}
+	w.PingURL = fmt.Sprintf("http://%s/status", hostport)
+	w.SubmitURL = fmt.Sprintf("http://%s/worker/submit/%s", hostport, w.uid.String())
+	w.WorkURL = fmt.Sprintf("http://%s/worker/work/%s", hostport, w.uid.String())
+	w.ByeURL = fmt.Sprintf("http://%s/worker/bye/%s", hostport, w.uid.String())
+	w.ACKURL = fmt.Sprintf("http://%s/worker/ack/%s", hostport, w.uid.String())
+	w.Auth1URL = fmt.Sprintf("http://%s/worker/init/%s", hostport, w.uid.String())
+	w.Auth2URL = fmt.Sprintf("http://%s/worker/auth/%s", hostport, w.uid.String())
+	return w
 }
 
 func (w *WorkerClient) ping(ctx context.Context) bool {
-	req, _ := http.NewRequest("GET", "http://127.0.0.1:8080/status", nil)
+	req, _ := http.NewRequest("GET", w.PingURL, nil)
 	req = req.WithContext(ctx)
 	resp, err := w.HTTP.Do(req)
 	select {
@@ -83,7 +103,7 @@ func (w *WorkerClient) submit(ctx context.Context, features *models.FeaturesMail
 
 	httpreq, err := http.NewRequest(
 		"POST",
-		fmt.Sprintf("http://127.0.0.1:8080/worker/submit/%s", w.uid.String()),
+		w.SubmitURL,
 		bytes.NewReader(enc),
 	)
 	if err != nil {
@@ -142,7 +162,6 @@ func (w *WorkerClient) bye() error {
 }
 
 func (w *WorkerClient) ACK(ctx context.Context, uid ulid.ULID) error {
-	u := fmt.Sprintf("http://127.0.0.1:8080/worker/ack/%s", w.uid.String())
 	req := &ackRequest{UID: uid.String()}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -152,7 +171,7 @@ func (w *WorkerClient) ACK(ctx context.Context, uid ulid.ULID) error {
 	if err != nil {
 		return err
 	}
-	httpreq, err := http.NewRequest("POST", u, bytes.NewReader(enc))
+	httpreq, err := http.NewRequest("POST", w.ACKURL, bytes.NewReader(enc))
 	if err != nil {
 		return err
 	}
@@ -170,10 +189,10 @@ func (w *WorkerClient) doRequest(ctx context.Context, kind string, features ...*
 	switch kind {
 	case "work":
 		req = &workRequest{RequestID: w.requestID}
-		u = fmt.Sprintf("http://127.0.0.1:8080/worker/work/%s", w.uid.String())
+		u = w.WorkURL
 	case "bye":
 		req = &byeRequest{RequestID: w.requestID}
-		u = fmt.Sprintf("http://127.0.0.1:8080/worker/bye/%s", w.uid.String())
+		u = w.ByeURL
 	default:
 		return nil, errors.New("wrong kind of request")
 	}
@@ -213,7 +232,7 @@ func (w *WorkerClient) Auth(ctx context.Context) error {
 	}
 	req, _ := http.NewRequest(
 		"POST",
-		fmt.Sprintf("http://127.0.0.1:8080/worker/init/%s", w.uid.String()),
+		w.Auth1URL,
 		bytes.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -258,7 +277,7 @@ func (w *WorkerClient) Auth(ctx context.Context) error {
 	}
 	req, _ = http.NewRequest(
 		"POST",
-		fmt.Sprintf("http://127.0.0.1:8080/worker/auth/%s", w.uid.String()),
+		w.Auth2URL,
 		bytes.NewReader(body),
 	)
 	req.Header.Set("Content-Type", "application/json")
@@ -297,6 +316,12 @@ func WorkerAction(c *cli.Context) error {
 		nbParsers = runtime.NumCPU()
 	}
 
+	masterHostPort := strings.TrimSpace(c.String("master"))
+	_, _, err = net.SplitHostPort(masterHostPort)
+	if err != nil {
+		return cli.NewExitError("Can't parse master address", 1)
+	}
+
 	sec := strings.TrimSpace(c.GlobalString("secret"))
 	if len(sec) == 0 {
 		return cli.NewExitError("secret is not set", 2)
@@ -318,7 +343,7 @@ func WorkerAction(c *cli.Context) error {
 
 W:
 	for {
-		err = worker(gctx, secret, nbParsers, logger)
+		err = worker(gctx, secret, nbParsers, masterHostPort, logger)
 
 		if err == nil || err == context.Canceled {
 			break W
@@ -350,10 +375,10 @@ W:
 	return nil
 }
 
-func worker(gctx context.Context, secret *memguard.LockedBuffer, nbParsers int, logger log15.Logger) error {
+func worker(gctx context.Context, secret *memguard.LockedBuffer, nbParsers int, hostport string, logger log15.Logger) error {
 	g, ctx := errgroup.WithContext(gctx)
 
-	worker := NewWorker(secret, logger)
+	worker := NewWorker(secret, hostport, logger)
 
 Ping:
 	for {
