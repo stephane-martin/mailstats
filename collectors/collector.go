@@ -6,6 +6,7 @@ import (
 	"github.com/inconshreveable/log15"
 	"github.com/oklog/ulid"
 	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/models"
 	"sync"
 	"time"
@@ -19,6 +20,11 @@ type Collector interface {
 	ACK(uid ulid.ULID)
 	Start() error
 	Close() error
+}
+
+func CollectAndForward(done <-chan struct{}, incoming *models.IncomingMail, c Collector, f forwarders.Forwarder) error {
+	f.Forward(incoming)
+	return c.Push(done, incoming)
 }
 
 func NewCollector(args arguments.Args, logger log15.Logger) (Collector, error) {

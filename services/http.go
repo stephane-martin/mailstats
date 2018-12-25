@@ -64,8 +64,6 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, collector collector
 		c.Status(200)
 	})
 
-
-
 	analyzeMime := func(enqueue bool) func(c *gin.Context) {
 		return func(c *gin.Context) {
 			metrics.M().Connections.WithLabelValues(c.ClientIP(), "http").Inc()
@@ -190,8 +188,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, collector collector
 				incoming.RcptTo = append(incoming.RcptTo, recipient.Address)
 			}
 			if enqueue {
-				forwarder.Forward(incoming)
-				err := collector.PushCtx(ctx, incoming)
+				err := collectors.CollectAndForward(ctx.Done(), incoming, collector, forwarder)
 				if err != nil {
 					logger.Error("Error pushing HTTP message to collector", "error", err)
 					c.Status(500)
@@ -362,8 +359,7 @@ func StartHTTP(ctx context.Context, args arguments.HTTPArgs, collector collector
 				incoming.RcptTo = append(incoming.RcptTo, addr.Address)
 			}
 			if enqueue {
-				forwarder.Forward(incoming)
-				err := collector.PushCtx(ctx, incoming)
+				err := collectors.CollectAndForward(ctx.Done(), incoming, collector, forwarder)
 				if err != nil {
 					logger.Error("Error pushing HTTP message to collector", "error", err)
 					c.Status(500)

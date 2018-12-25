@@ -127,8 +127,7 @@ func (e *StatsMilter) BodyChunk(chunk []byte, m *milter.Modifier) (milter.Respon
 
 func (e *StatsMilter) Body(m *milter.Modifier) (milter.Response, error) {
 	incoming := e.message.make()
-	e.Forwarder.Forward(incoming)
-	err := e.Collector.Push(e.stop, incoming)
+	err := collectors.CollectAndForward(e.stop, incoming, e.Collector, e.Forwarder)
 	if err == nil {
 		return milter.RespAccept, nil
 	}

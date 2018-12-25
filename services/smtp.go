@@ -79,7 +79,7 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 	if err != nil {
 		return err
 	}
-	m := &models.IncomingMail{
+	incoming := &models.IncomingMail{
 		BaseInfos: models.BaseInfos{
 			MailFrom:     from,
 			RcptTo:       to,
@@ -88,8 +88,7 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 		},
 		Data: b,
 	}
-	u.Forwarder.Forward(m)
-	return u.Collector.Push(u.Stop, m)
+	return collectors.CollectAndForward(u.Stop, incoming, u.Collector, u.Forwarder)
 }
 
 func (u *User) Logout() error {

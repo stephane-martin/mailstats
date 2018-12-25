@@ -266,8 +266,7 @@ func IMAPMonitorAction(c *cli.Context) error {
 				},
 				Data: body,
 			}
-			forwarder.Forward(incoming)
-			err = collector.PushCtx(ctx, incoming)
+			err = collectors.CollectAndForward(ctx.Done(), incoming, collector, forwarder)
 			if err != nil {
 				return err
 			}
