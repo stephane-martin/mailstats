@@ -6,23 +6,22 @@ import (
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/forwarders"
+	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
+	"go.uber.org/fx"
 	"io"
 	"io/ioutil"
 	"net"
-	"os"
-	"os/signal"
-	"syscall"
 	"time"
 
 	"github.com/emersion/go-smtp"
 
 	"github.com/inconshreveable/log15"
 	"github.com/urfave/cli"
-	"golang.org/x/sync/errgroup"
 )
 
 type Backend struct {
@@ -30,27 +29,24 @@ type Backend struct {
 	Collector collectors.Collector
 	Forwarder forwarders.Forwarder
 	Logger    log15.Logger
-	Stop      <-chan struct{}
 }
 
-func newBackend(ctx context.Context, port int, collector collectors.Collector, forwarder forwarders.Forwarder, logger log15.Logger) *Backend {
+func NewSMTPBackend(args *arguments.Args, collector collectors.Collector, forwarder forwarders.Forwarder, logger log15.Logger) smtp.Backend {
 	return &Backend{
-		Port: port,
+		Port:      args.SMTP.ListenPort,
 		Collector: collector,
 		Forwarder: forwarder,
-		Logger: logger,
-		Stop: ctx.Done(),
+		Logger:    logger,
 	}
 }
 
 func (b *Backend) Login(username, password string) (smtp.User, error) {
-	b.Logger.Debug("Authenticating user")
+	b.Logger.Debug("Authenticated user")
 	return &User{
 		Port:      b.Port,
 		Collector: b.Collector,
 		Forwarder: b.Forwarder,
 		Logger:    b.Logger,
-		Stop:      b.Stop,
 	}, nil
 }
 
@@ -61,7 +57,6 @@ func (b *Backend) AnonymousLogin() (smtp.User, error) {
 		Collector: b.Collector,
 		Forwarder: b.Forwarder,
 		Logger:    b.Logger,
-		Stop:      b.Stop,
 	}, nil
 }
 
@@ -84,11 +79,11 @@ func (u *User) Send(from string, to []string, r io.Reader) error {
 			MailFrom:     from,
 			RcptTo:       to,
 			TimeReported: time.Now(),
-			Port: u.Port,
+			Port:         u.Port,
 		},
 		Data: b,
 	}
-	return collectors.CollectAndForward(u.Stop, incoming, u.Collector, u.Forwarder)
+	return collectors.CollectAndForward(context.Background().Done(), incoming, u.Collector, u.Forwarder)
 }
 
 func (u *User) Logout() error {
@@ -96,80 +91,108 @@ func (u *User) Logout() error {
 	return nil
 }
 
-func SMTPAction(c *cli.Context) error {
-	args, err := arguments.GetArgs(c)
+type SMTPServer struct {
+	*smtp.Server
+	listener net.Listener
+	logger log15.Logger
+	addr string
+}
+
+func (s *SMTPServer) Name() string { return "SMTPServer" }
+
+func (s *SMTPServer) Prestart() error {
+	l, err := net.Listen("tcp", s.Addr)
 	if err != nil {
-		return err
+		return fmt.Errorf("SMTP Listen() has failed: %s", err)
 	}
-	logger := args.Logging.Build()
+	s.listener = utils.WrapListener(l, "SMTP", s.logger)
+	return nil
+}
 
-	collector, err := collectors.NewCollector(*args, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
-	}
 
-	forwarder, err := forwarders.Build(args.Forward, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build forwarder: %s", err), 3)
-	}
-
-	consumer, err := consumers.MakeConsumer(*args, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
-	}
-
-	if args.GeoIP.Enabled {
-		err := utils.InitGeoIP(args.GeoIP.DatabasePath)
-		if err != nil {
-			return cli.NewExitError(fmt.Sprintf("Error loading GeoIP database: %s", err), 1)
-		}
-		//noinspection GoUnhandledErrorResult
-		defer utils.CloseGeoIP()
-	}
-
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
-	gctx, cancel := context.WithCancel(context.Background())
-
+func (s *SMTPServer) Start(ctx context.Context) error {
+	s.logger.Debug("Start SMTP service")
 	go func() {
-		for sig := range sigchan {
-			logger.Info("Signal received", "signal", sig.String())
-			cancel()
-		}
+		<-ctx.Done()
+		s.Server.Close()
 	}()
+	return s.Server.Serve(s.listener)
+}
 
-	g, ctx := errgroup.WithContext(gctx)
-
-	s := smtp.NewServer(newBackend(ctx, args.SMTP.ListenPort, collector, forwarder, logger))
+func NewSMTPService(args *arguments.Args, backend smtp.Backend, logger log15.Logger) *SMTPServer {
+	s := smtp.NewServer(backend)
 	s.Domain = "localhost"
 	s.MaxIdleSeconds = args.SMTP.MaxIdle
 	s.MaxMessageBytes = args.SMTP.MaxMessageSize
 	s.MaxRecipients = 0
 	s.AllowInsecureAuth = true
+	return &SMTPServer{
+		Server: s,
+		addr: net.JoinHostPort(args.SMTP.ListenAddr, fmt.Sprintf("%d", args.SMTP.ListenPort)),
+		logger: logger,
+	}
+}
 
-	theparser := parser.NewParser(logger)
+var SMTPService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, backend smtp.Backend, p parser.Parser, logger log15.Logger) *SMTPServer {
+	s := NewSMTPService(args, backend, logger)
+	utils.Append(lc, s, logger)
+	return s
+})
 
-	var collG errgroup.Group
-	collG.Go(func() error {
-		return collector.Start()
-	})
+func SMTPAction(c *cli.Context) error {
 
-	g.Go(func() error {
-		err := forwarder.Start(ctx)
-		logger.Info("forwarder has returned", "error", err)
-		return err
-	})
+	args, err := arguments.GetArgs(c)
+	if err != nil {
+		err = fmt.Errorf("error validating cli arguments: %s", err)
+		return cli.NewExitError(err.Error(), 1)
+	}
 
-	g.Go(func() error {
-		defer func() {
-			// in case the s.Close() is called whereas s does not have yet a Listener
-			recover()
-		}()
-		<-ctx.Done()
-		s.Close()
-		return nil
-	})
+	logger := logging.NewLogger(args)
 
+
+	// ordre d'arrêt: (smtp, http), (forwarder, collector), parser, consumer
+	// donc collector doit dépendre de parser
+	// et parser doit dépendre de consumer
+
+	// SMTP and HTTP services produce incoming messages and send them to the collector
+	// parser pulls messages from collector and sends them to consumer
+
+	// SMTP => collector, forwarder, parser
+	// HTTP => collector, forwarder, parser
+	// parser => collector, consumer
+	// collector
+	// forwarder
+	// consumer
+
+	// start order: (collector/consumer/forwarder), parser, (SMTP/HTTP)
+
+	app := fx.New(
+		forwarders.ForwarderService,
+		consumers.ConsumerService,
+		collectors.CollectorService,
+		parser.Service,
+		extractors.ExifToolService,
+		HTTPService,
+		HTTPMasterService,
+		SMTPService,
+		utils.GeoIPService,
+
+		fx.Provide(
+			func() *cli.Context { return c },
+			func() *arguments.Args { return args },
+			func() log15.Logger { return logger },
+			NewSMTPBackend,
+		),
+		fx.Logger(logging.PrintfLogger{Logger: logger}),
+		fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *SMTPServer) {
+			// bootstrap the application
+		}),
+	)
+
+	app.Run()
+	return nil
+
+	/*
 	if args.SMTP.Inetd {
 		g.Go(func() error {
 			err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
@@ -188,22 +211,9 @@ func SMTPAction(c *cli.Context) error {
 		})
 		return g.Wait()
 	}
+	*/
 
-	var listener net.Listener
-	s.Addr = net.JoinHostPort(args.SMTP.ListenAddr, fmt.Sprintf("%d", args.SMTP.ListenPort))
-	listener, err = net.Listen("tcp", s.Addr)
-	if err != nil {
-		cancel()
-		return cli.NewExitError(fmt.Sprintf("Listen() has failed: %s", err), 2)
-	}
-	listener = utils.WrapListener(listener, "SMTP", logger)
-
-	g.Go(func() error {
-		err := StartHTTP(ctx, args.HTTP, collector, forwarder, logger)
-		logger.Debug("StartHTTP has returned", "error", err)
-		return err
-	})
-
+	/*
 	if args.Secret != nil {
 		g.Go(func() error {
 			err := StartMaster(ctx, args.HTTP, args.Secret, collector, consumer, logger)
@@ -211,28 +221,6 @@ func SMTPAction(c *cli.Context) error {
 			return err
 		})
 	}
+	*/
 
-	g.Go(func() error {
-		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
-		logger.Info("ParseMails has returned", "error", err)
-		return err
-	})
-
-	g.Go(func() error {
-		logger.Debug("Starting SMTP service")
-		err := s.Serve(listener)
-		logger.Debug("Stopped SMTP service")
-		return err
-	})
-
-	err = g.Wait()
-	_ = collector.Close()
-	_ = theparser.Close()
-	_ = forwarder.Close()
-	_ = consumer.Close()
-	_ = collG.Wait()
-	if err != nil {
-		logger.Debug("SMTP error after Wait()", "error", err)
-	}
-	return nil
 }

@@ -7,7 +7,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/parser"
+	"go.uber.org/fx"
 	"io"
 	"io/ioutil"
 	"net"
@@ -306,13 +309,10 @@ func WorkerAction(c *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	logger := logArgs.Build()
+	logger := logging.NewLogger(&arguments.Args{Logging: logArgs})
 	nbParsers := c.GlobalInt("nbparsers")
 
-	if nbParsers == 0 {
-		return nil
-	}
-	if nbParsers < 0 {
+	if nbParsers <= 0 {
 		nbParsers = runtime.NumCPU()
 	}
 
@@ -375,10 +375,32 @@ W:
 	return nil
 }
 
-func worker(gctx context.Context, secret *memguard.LockedBuffer, nbParsers int, hostport string, logger log15.Logger) error {
-	g, ctx := errgroup.WithContext(gctx)
-
+func worker(ctx context.Context, secret *memguard.LockedBuffer, nbParsers int, hostport string, logger log15.Logger) error {
 	worker := NewWorker(secret, hostport, logger)
+	var theparser parser.Parser
+
+	app := fx.New(
+		parser.Service,
+		extractors.ExifToolService,
+		utils.GeoIPService,
+
+		fx.Provide(
+			func() *arguments.Args { return &arguments.Args{NbParsers: nbParsers} },
+			func() log15.Logger { return logger },
+		),
+		fx.Logger(logging.PrintfLogger{Logger: logger}),
+		fx.Invoke(func(p parser.Parser) {
+			theparser = p
+		}),
+	)
+	startCtx, _ := context.WithTimeout(ctx, app.StartTimeout())
+	err := app.Start(startCtx)
+	if err != nil {
+		return err
+	}
+	stopCtx, _ := context.WithTimeout(ctx, app.StopTimeout())
+	//noinspection GoUnhandledErrorResult
+	defer app.Stop(stopCtx)
 
 Ping:
 	for {
@@ -389,7 +411,7 @@ Ping:
 		logger.Info("Server not reachable")
 		select {
 		case <-ctx.Done():
-			return context.Canceled
+			return ctx.Err()
 		case <-time.After(5 * time.Second):
 		}
 	}
@@ -400,22 +422,20 @@ Ping:
 	}
 
 	logger.Info("Starting authentication")
-	err := worker.Auth(ctx)
+	err = worker.Auth(ctx)
 	if err != nil {
 		return err
 	}
 	logger.Info("Worker is authenticated")
 
-	theparser := parser.NewParser(logger)
-	//noinspection GoUnhandledErrorResult
-	defer theparser.Close()
-
 	ch := make(chan *models.IncomingMail)
+	g, lctx := errgroup.WithContext(ctx)
+
 
 	g.Go(func() error {
 		defer close(ch)
 		for {
-			m, err := worker.getWork(ctx)
+			m, err := worker.getWork(lctx)
 			if err == nil {
 				logger.Debug("Received work", "uid", ulid.ULID(m.UID).String())
 				ch <- m
@@ -447,9 +467,9 @@ Ping:
 						var err error
 						if parseErr != nil {
 							logger.Info("Worker failed to parse message", "error", parseErr)
-							err = worker.ACK(ctx, m.UID)
+							err = worker.ACK(lctx, m.UID)
 						} else {
-							err = worker.submit(ctx, features)
+							err = worker.submit(lctx, features)
 						}
 						if err == nil || err == context.Canceled {
 							return err

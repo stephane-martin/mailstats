@@ -372,9 +372,13 @@ func MakeApp() *cli.App {
 					}
 					fmt.Println(utils.JSONString(meta))
 				case ".doc":
-					tool, err := extractors.NewExifToolWrapper()
+					tool := extractors.NewExifTool(nil)
+					if tool == nil {
+						return cli.NewExitError("exiftool not found", 2)
+					}
+					err := tool.Prestart()
 					if err != nil {
-						return cli.NewExitError(err, 2)
+						return cli.NewExitError(err.Error(), 2)
 					}
 					//noinspection GoUnhandledErrorResult
 					defer tool.Close()
@@ -384,9 +388,13 @@ func MakeApp() *cli.App {
 					}
 					fmt.Println(utils.JSONString(meta))
 				case ".jpg", ".jpeg", ".png", ".tiff", ".gif", ".webp":
-					tool, err := extractors.NewExifToolWrapper()
+					tool := extractors.NewExifTool(nil)
+					if tool == nil {
+						return cli.NewExitError("exiftool not found", 2)
+					}
+					err := tool.Prestart()
 					if err != nil {
-						return cli.NewExitError(err, 2)
+						return cli.NewExitError(err.Error(), 2)
 					}
 					//noinspection GoUnhandledErrorResult
 					defer tool.Close()

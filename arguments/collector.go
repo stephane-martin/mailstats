@@ -13,10 +13,10 @@ type CollectorArgs struct {
 }
 
 var collectorsMap = map[string]struct{}{
-	"filesystem": struct{}{},
-	"channel": struct{}{},
-	"redis": struct{}{},
-	"rabbitmq": struct{}{},
+	"filesystem": {},
+	"channel":    {},
+	"redis":      {},
+	"rabbitmq":   {},
 }
 
 func (args *CollectorArgs) Verify() error {

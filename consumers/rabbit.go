@@ -42,17 +42,16 @@ func NewRabbitConsumer(args arguments.RabbitArgs, logger log15.Logger) (Consumer
 		return nil, err
 	}
 	c.publisher = publisher
-
-	var ctx context.Context
-	ctx, c.cancel = context.WithCancel(context.Background())
-
-	go func() {
-		_ = c.publisher.Run(ctx)
-		_ = c.publisher.Close()
-	}()
-
 	return c, nil
 
+}
+
+func (c *RabbitConsumer) Name() string {
+	return "RabbitConsumer"
+}
+
+func (c *RabbitConsumer) Start(ctx context.Context) error {
+	return c.publisher.Run(ctx)
 }
 
 func (c *RabbitConsumer) Consume(features *models.FeaturesMail) error {
@@ -80,9 +79,5 @@ func (c *RabbitConsumer) Consume(features *models.FeaturesMail) error {
 }
 
 func (c *RabbitConsumer) Close() error {
-	if c.cancel != nil {
-		c.cancel()
-	}
-	return nil
+	return c.publisher.Close()
 }
-

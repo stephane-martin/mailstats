@@ -2,28 +2,21 @@ package parser
 
 import (
 	"bytes"
-	"compress/bzip2"
-	"compress/gzip"
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
-	"github.com/emersion/go-message/charset"
+	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/metrics"
+	"go.uber.org/fx"
 	"io"
-	"io/ioutil"
 	"mime"
 	"mime/multipart"
-	"mime/quotedprintable"
 	"net/mail"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/h2non/filetype/matchers"
-	"github.com/jordic/goics"
 	"github.com/oklog/ulid"
 	"github.com/russross/blackfriday"
 	"github.com/stephane-martin/mailstats/collectors"
@@ -31,43 +24,145 @@ import (
 	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/utils"
-	"github.com/xi2/xz"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
-	"golang.org/x/text/encoding/charmap"
-	"golang.org/x/text/encoding/htmlindex"
-	"golang.org/x/text/encoding/unicode"
 )
 
 type Parser interface {
+	utils.Service
+	utils.Startable
 	Parse(i *models.IncomingMail) (*models.FeaturesMail, error)
-	Close() error
+	ParseMany(context.Context, <-chan *models.IncomingMail, chan<- *models.FeaturesMail)
 }
 
-type ParserImpl struct {
-	logger log15.Logger
-	tool   *extractors.ExifToolWrapper
-}
-
-func NewParser(logger log15.Logger) *ParserImpl {
-	tool, err := extractors.NewExifToolWrapper()
-	if err != nil {
-		logger.Info("Failed to locate exiftool", "error", err)
-		return &ParserImpl{logger: logger}
+func NewParser(nbWorkers int, collector collectors.Collector, consumer consumers.Consumer, geoip utils.GeoIP, tool extractors.ExifTool, logger log15.Logger) Parser {
+	parser := impl{
+		logger:    logger,
+		collector: collector,
+		consumer:  consumer,
+		nbWorkers: nbWorkers,
+		tool:      tool,
+		geoip:     geoip,
 	}
-	return &ParserImpl{logger: logger, tool: tool}
+
+	return &parser
 }
 
-func (p *ParserImpl) Close() error {
-	if p.tool != nil {
-		return p.tool.Close()
+type Params struct {
+	fx.In
+	Args      *arguments.Args      `optional:"true"`
+	Collector collectors.Collector `optional:"true"`
+	Consumer  consumers.Consumer   `optional:"true"`
+	Tool      extractors.ExifTool  `optional:"true"`
+	GeoIP     utils.GeoIP          `optional:"true"`
+	Logger    log15.Logger         `optional:"true"`
+}
+
+var Service = fx.Provide(func(lc fx.Lifecycle, params Params) Parser {
+	var nbWorkers = int(1)
+	if params.Args != nil {
+		nbWorkers = params.Args.NbParsers
 	}
-	return nil
+	logger := params.Logger
+	if logger == nil {
+		logger = log15.New()
+		logger.SetHandler(log15.DiscardHandler())
+	}
+	p := NewParser(nbWorkers, params.Collector, params.Consumer, params.GeoIP, params.Tool, logger)
+	utils.Append(lc, p, logger)
+	return p
+})
+
+type impl struct {
+	logger    log15.Logger
+	tool      extractors.ExifTool
+	collector collectors.Collector
+	consumer  consumers.Consumer
+	nbWorkers int
+	geoip     utils.GeoIP
 }
 
-func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
+func (p *impl) Name() string { return "Parser" }
+
+func (p *impl) ParseMany(ctx context.Context, incoming <-chan *models.IncomingMail, results chan<- *models.FeaturesMail) {
+	defer close(results)
+
+	nbWorkers := p.nbWorkers
+	if nbWorkers <= 0 {
+		nbWorkers = 1
+	}
+	g, lCtx := errgroup.WithContext(ctx)
+	for i := 0; i < nbWorkers; i++ {
+		g.Go(func() error {
+			for {
+				select {
+				case <-lCtx.Done():
+					return lCtx.Err()
+				case i, ok := <-incoming:
+					if !ok {
+						return nil
+					}
+					features, err := p.Parse(i)
+					if err != nil {
+						p.logger.Info("Error parsing incoming mail", "error", err)
+					} else {
+						results <- features
+					}
+				}
+			}
+		})
+	}
+	_ = g.Wait()
+}
+
+func (p *impl) Start(ctx context.Context) error {
+	if p.nbWorkers == 0 || p.collector == nil || p.consumer == nil {
+		<-ctx.Done()
+		return nil
+	}
+
+	g, lCtx := errgroup.WithContext(ctx)
+
+	for i := 0; i < p.nbWorkers; i++ {
+		g.Go(func() error {
+		L:
+			for {
+				incoming, err := p.collector.PullCtx(lCtx)
+				if err == context.Canceled {
+					return err
+				}
+				if err != nil {
+					p.logger.Warn("Error fetching mail from collector", "error", err)
+					continue L
+				}
+				if incoming == nil {
+					continue L
+				}
+				features, err := p.Parse(incoming)
+				p.collector.ACK(incoming.UID)
+				if err != nil {
+					p.logger.Info("Failed to parse message", "error", err)
+					continue L
+				}
+				g.Go(func() error {
+					err := p.consumer.Consume(features)
+					if err != nil {
+						p.logger.Warn("Failed to consume parsing results", "error", err)
+					} else {
+						p.logger.Debug("Parsing results sent to consumer")
+					}
+					return nil
+				})
+
+			}
+		})
+	}
+	return g.Wait()
+}
+
+func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err error) {
 	now := time.Now()
 	defer func() {
 		if err == nil {
@@ -193,7 +288,7 @@ func (p *ParserImpl) Parse(i *models.IncomingMail) (features *models.FeaturesMai
 	if len(features.Headers["received"]) > 0 {
 		features.Received = make([]models.ReceivedElement, 0)
 		for _, h := range features.Headers["received"] {
-			features.Received = append(features.Received, extractors.ParseReceivedHeader(h, p.logger))
+			features.Received = append(features.Received, extractors.ParseReceivedHeader(h, p.geoip, p.logger))
 		}
 		delete(features.Headers, "received")
 	}
@@ -235,53 +330,7 @@ func filterPlain(plain string) string {
 	return strings.TrimSpace(plain)
 }
 
-func decodeBody(body io.Reader, charset string, qp string) string {
-	if qp == "quoted-printable" {
-		body = quotedprintable.NewReader(body)
-	} else if qp == "base64" {
-		body = base64.NewDecoder(base64.StdEncoding, body)
-	}
-	if charset != "" {
-		encoder, err := htmlindex.Get(charset)
-		if err == nil {
-			r := encoder.NewDecoder().Reader(body)
-			res, err := ioutil.ReadAll(r)
-			if err == nil {
-				return string(res)
-			}
-		}
-	}
-	res, err := decodeUTF8(body)
-	if err == nil {
-		return res
-	}
-	res, err = decodeLatin1(body)
-	if err == nil {
-		return res
-	}
-	// damn, nothing works
-	return ""
-}
-
-func decodeLatin1(body io.Reader) (string, error) {
-	r := charmap.ISO8859_15.NewDecoder().Reader(body)
-	res, err := ioutil.ReadAll(r)
-	if err != nil {
-		return "", err
-	}
-	return string(res), nil
-}
-
-func decodeUTF8(body io.Reader) (string, error) {
-	r := unicode.UTF8.NewDecoder().Reader(body)
-	res, err := ioutil.ReadAll(r)
-	if err != nil {
-		return "", err
-	}
-	return string(res), nil
-}
-
-func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Logger) (string, string, []string, []*models.Attachment) {
+func ParsePart(part io.Reader, tool extractors.ExifTool, logger log15.Logger) (string, string, []string, []*models.Attachment) {
 	plain := ""
 	var allHTML []string
 	var attachments []*models.Attachment
@@ -409,302 +458,4 @@ func ParsePart(part io.Reader, tool *extractors.ExifToolWrapper, logger log15.Lo
 		}
 	}
 	return contentType, plain, allHTML, attachments
-}
-
-func AnalyseAttachment(filename string, ct string, r io.Reader, t *extractors.ExifToolWrapper, l log15.Logger) (*models.Attachment, error) {
-	content, err := ioutil.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-	attachment := &models.Attachment{
-		Name:         filename,
-		Size:         int64(len(content)),
-		ReportedType: ct,
-	}
-
-	h := sha256.Sum256(content)
-	attachment.Hash = hex.EncodeToString(h[:])
-
-	typ, err := utils.Guess(filename, content)
-	if err != nil {
-		return nil, err
-	}
-	attachment.InferredType = typ.MIME.Value
-	attachment.Executable = extractors.IsExecutable(attachment.InferredType)
-	l.Debug("Attachment", "value", typ.MIME.Value, "filename", filename)
-
-	if attachment.Executable {
-		meta, err := t.Extract(content, nil, "-EXE:All")
-		if err != nil {
-			l.Warn("Failed to extract metadata with 'exiftool'", "error", err)
-		} else {
-			attachment.ExeMetadata = meta
-		}
-		return attachment, nil
-	}
-
-	switch typ {
-	case matchers.TypePdf:
-		text, err := extractors.PDFBytesToText(content)
-		if err != nil {
-			l.Warn("Error extracting text from PDF", "error", err)
-		} else if len(text) > 0 {
-			lang := extractors.Language(text)
-			if lang != "" {
-				attachment.PDFMetadata = new(models.PDFMeta)
-				attachment.PDFMetadata.Language = lang
-				attachment.PDFMetadata.Keywords, attachment.PDFMetadata.Phrases = extractors.Keywords(text, nil, attachment.PDFMetadata.Language)
-			}
-		}
-		attachment.PDFMetadata, err = extractors.PDFBytesInfo(content, attachment.PDFMetadata)
-		if err != nil {
-			l.Warn("Error extracting metadata from PDF", "error", err)
-		}
-	case matchers.TypeDocx:
-		text, props, hasMacro, err := extractors.ConvertBytesDocx(content)
-		if err != nil {
-			l.Warn("Error extracting metadata from DOCX", "error", err)
-		} else {
-			attachment.DocMetadata = &models.DocMeta{
-				Properties: props,
-				HasMacro:   hasMacro,
-			}
-			if len(text) > 0 {
-				lang := extractors.Language(text)
-				if lang != "" {
-					attachment.DocMetadata.Language = lang
-					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
-				}
-			}
-		}
-	case utils.OdtType:
-		text, props, err := extractors.ConvertBytesODT(content)
-		if err != nil {
-			l.Warn("Error extracting metadata from ODT", "error", err)
-		} else {
-			attachment.DocMetadata = new(models.DocMeta)
-			attachment.DocMetadata.Properties = props
-			if len(text) > 0 {
-				lang := extractors.Language(text)
-				if lang != "" {
-					attachment.DocMetadata.Language = lang
-					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
-				}
-			}
-		}
-
-	case matchers.TypeDoc:
-		text, err := extractors.ConvertBytesDoc(content)
-		if err != nil {
-			l.Warn("Error extracting text from DOC", "error", err)
-		} else {
-			if len(text) > 0 {
-				lang := extractors.Language(text)
-				if lang != "" {
-					attachment.DocMetadata = new(models.DocMeta)
-					attachment.DocMetadata.Language = lang
-					attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
-				}
-			}
-			p, err := t.Extract(content, nil, "-FlashPix:All")
-			if err != nil {
-				l.Warn("Error extracting metadata from DOC", "error", err)
-			} else {
-				if attachment.DocMetadata == nil {
-					attachment.DocMetadata = new(models.DocMeta)
-				}
-				attachment.DocMetadata.Properties = p
-			}
-		}
-
-	case utils.HTMLType:
-		text, _, _ := extractors.HTML2Text(string(content))
-		if len(text) > 0 {
-			lang := extractors.Language(text)
-			if lang != "" {
-				attachment.DocMetadata = new(models.DocMeta)
-				attachment.DocMetadata.Language = lang
-				attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
-			}
-		}
-
-	case utils.MarkdownType:
-		html := string(blackfriday.Run(content))
-		text, _, _ := extractors.HTML2Text(html)
-		if len(text) > 0 {
-			lang := extractors.Language(text)
-			if lang != "" {
-				attachment.DocMetadata = new(models.DocMeta)
-				attachment.DocMetadata.Language = lang
-				attachment.DocMetadata.Keywords, attachment.DocMetadata.Phrases = extractors.Keywords(text, nil, attachment.DocMetadata.Language)
-			}
-		}
-
-	case matchers.TypePng:
-		if t != nil {
-			meta, err := t.Extract(content, nil, "-EXIF:All", "-PNG:All")
-			if err != nil {
-				l.Warn("Failed to extract metadata with exiftool", "error", err)
-			} else {
-				attachment.ImageMetadata = meta
-			}
-		}
-
-	case matchers.TypeJpeg, matchers.TypeWebp, matchers.TypeGif:
-		if t != nil {
-			meta, err := t.Extract(content, nil, "-EXIF:All")
-			if err != nil {
-				l.Warn("Failed to extract metadata with exiftool", "error", err)
-			} else {
-				attachment.ImageMetadata = meta
-			}
-		}
-	case matchers.TypeZip, matchers.TypeTar, matchers.TypeRar:
-		archive, err := AnalyzeArchive(typ, bytes.NewReader(content), attachment.Size, l)
-		if err != nil {
-			l.Warn("Error analyzing archive", "error", err)
-		} else {
-			if attachment.Archives == nil {
-				attachment.Archives = make(map[string]*models.Archive)
-			}
-			attachment.Archives[filename] = archive
-		}
-
-	case matchers.TypeGz:
-		gzReader, err := gzip.NewReader(bytes.NewReader(content))
-		if err != nil {
-			l.Warn("Failed to decompress gzip attachement", "error", err)
-		} else {
-			if strings.HasSuffix(filename, ".gz") {
-				filename = filename[:len(filename)-3]
-			}
-			subAttachment, err := AnalyseAttachment(filename, "", gzReader, t, l)
-			if err != nil {
-				l.Warn("Error analyzing subattachement", "error", err)
-			} else {
-				attachment.SubAttachment = subAttachment
-				attachment.Executable = subAttachment.Executable
-			}
-		}
-
-	case matchers.TypeBz2:
-		bz2Reader := bzip2.NewReader(bytes.NewReader(content))
-		if strings.HasSuffix(filename, ".bz2") {
-			filename = filename[:len(filename)-4]
-		}
-		subAttachment, err := AnalyseAttachment(filename, "", bz2Reader, t, l)
-		if err != nil {
-			l.Warn("Error analyzing sub-attachement", "error", err)
-		} else {
-			attachment.SubAttachment = subAttachment
-			attachment.Executable = subAttachment.Executable
-		}
-
-	case matchers.TypeXz:
-		xzReader, err := xz.NewReader(bytes.NewReader(content), 0)
-		if err != nil {
-			l.Warn("Failed to decompress xz attachement", "error", err)
-		} else {
-			if strings.HasSuffix(filename, ".xz") {
-				filename = filename[:len(filename)-3]
-			}
-			subAttachment, err := AnalyseAttachment(filename, "", xzReader, t, l)
-			if err != nil {
-				l.Warn("Error analyzing sub-attachment", "error", err)
-			} else {
-				attachment.SubAttachment = subAttachment
-				attachment.Executable = subAttachment.Executable
-			}
-		}
-
-	case utils.IcalType:
-		dec := goics.NewDecoder(bytes.NewReader(content))
-		c := new(extractors.IcalConsumer)
-		err := dec.Decode(c)
-		if err != nil {
-			l.Warn("Failed to decode iCal", "error", err)
-		} else if c.Events != nil {
-			attachment.EventsMetadata = c.Events
-		}
-
-	default:
-		l.Info("Unknown attachment type", "type", typ.MIME.Value)
-	}
-
-	return attachment, nil
-}
-
-func NewDecoder() *mime.WordDecoder {
-	decoder := new(mime.WordDecoder)
-	// attach custom charset decoder
-	decoder.CharsetReader = charset.Reader
-	return decoder
-}
-
-// WordDecode automatically decodes word if necessary and returns decoded data
-func WordDecode(word string) (string, error) {
-	// return word unchanged if not RFC 2047 encoded
-	if !strings.HasPrefix(word, "=?") || !strings.HasSuffix(word, "?=") || strings.Count(word, "?") != 4 {
-		return word, nil
-	}
-	return NewDecoder().Decode(word)
-}
-
-// StringDecode splits text to list of words, decodes
-// every word and assembles it back into a decoded string
-func StringDecode(text string) (string, error) {
-	words := strings.Split(text, " ")
-	var err error
-	for idx := range words {
-		words[idx], err = WordDecode(words[idx])
-		if err != nil {
-			return "", err
-		}
-	}
-	return strings.Join(words, " "), nil
-}
-
-func ParseMails(ctx context.Context, collector collectors.Collector, parser Parser, consumer consumers.Consumer, nbParsers int, logger log15.Logger) error {
-	g, lCtx := errgroup.WithContext(ctx)
-
-	if nbParsers == 0 {
-		<-ctx.Done()
-		return nil
-	}
-
-	for i := 0; i < nbParsers; i++ {
-		g.Go(func() error {
-		L:
-			for {
-				incoming, err := collector.PullCtx(lCtx)
-				if err == context.Canceled {
-					return err
-				}
-				if err != nil {
-					logger.Warn("Error fetching mail from collector", "error", err)
-					continue L
-				}
-				if incoming == nil {
-					continue L
-				}
-				features, err := parser.Parse(incoming)
-				collector.ACK(incoming.UID)
-				if err != nil {
-					logger.Info("Failed to parse message", "error", err)
-					continue L
-				}
-				g.Go(func() error {
-					err := consumer.Consume(features)
-					if err != nil {
-						logger.Warn("Failed to consume parsing results", "error", err)
-					} else {
-						logger.Debug("Parsing results sent to consumer")
-					}
-					return nil
-				})
-
-			}
-		})
-	}
-	return g.Wait()
 }

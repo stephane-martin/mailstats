@@ -2,31 +2,69 @@ package extractors
 
 import (
 	"encoding/json"
+	"github.com/inconshreveable/log15"
 	"github.com/mostlygeek/go-exiftool"
 	"github.com/stephane-martin/mailstats/utils"
+	"go.uber.org/fx"
 	"os/exec"
 	"runtime"
 )
 
-type ExifToolWrapper struct {
+var ExifToolBinary = "exiftool"
+
+type ExifTool interface {
+	utils.Service
+	utils.Prestartable
+	utils.Closeable
+	Extract(content []byte, meta map[string]interface{}, flags ...string) (map[string]interface{}, error)
+	ExtractFromFile(filename string, meta map[string]interface{}, flags ...string) (map[string]interface{}, error)
+}
+
+type ExifToolImpl struct {
+	path string
 	tool *exiftool.Pool
+	logger log15.Logger
 }
 
 // TODO: run exiftool in sandbox
 
-func NewExifToolWrapper() (*ExifToolWrapper, error) {
-	path, err := exec.LookPath("exiftool")
-	if err != nil {
-		return nil, Absent("exiftool")
+func NewExifTool(logger log15.Logger) ExifTool {
+	if logger == nil {
+		logger = log15.New()
+		logger.SetHandler(log15.DiscardHandler())
 	}
-	t, err := exiftool.NewPool(path, runtime.NumCPU(), "-json")
+	path, err := exec.LookPath(ExifToolBinary)
 	if err != nil {
-		return nil, err
+		logger.Info("exiftool not found", "error", err)
+		return nil
 	}
-	return &ExifToolWrapper{tool: t}, nil
+	return &ExifToolImpl{
+		path: path,
+		logger: logger,
+	}
 }
 
-func (w *ExifToolWrapper) ExtractFromFile(filename string, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
+var ExifToolService = fx.Provide(func(lc fx.Lifecycle, logger log15.Logger) ExifTool {
+	t := NewExifTool(logger)
+	if t != nil {
+		utils.Append(lc, t, logger)
+	}
+	return t
+})
+
+func (w *ExifToolImpl) Name() string { return "ExifTool" }
+
+func (w *ExifToolImpl) Prestart() error {
+	t, err := exiftool.NewPool(w.path, runtime.NumCPU(), "-json")
+	if err != nil {
+		w.logger.Info("failed to make exiftool pool", "error", err)
+		return err
+	}
+	w.tool = t
+	return nil
+}
+
+func (w *ExifToolImpl) ExtractFromFile(filename string, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
 	if w == nil {
 		return meta, Absent("exiftool")
 	}
@@ -52,7 +90,7 @@ func (w *ExifToolWrapper) ExtractFromFile(filename string, meta map[string]inter
 	return meta, nil
 }
 
-func (w *ExifToolWrapper) Extract(content []byte, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
+func (w *ExifToolImpl) Extract(content []byte, meta map[string]interface{}, flags ...string) (map[string]interface{}, error) {
 	if w == nil {
 		return meta, Absent("exiftool")
 	}
@@ -70,7 +108,7 @@ func (w *ExifToolWrapper) Extract(content []byte, meta map[string]interface{}, f
 	return meta, err
 }
 
-func (w *ExifToolWrapper) Close() error {
+func (w *ExifToolImpl) Close() error {
 	if w == nil {
 		return nil
 	}
@@ -81,3 +119,5 @@ func (w *ExifToolWrapper) Close() error {
 	w.tool = nil
 	return nil
 }
+
+

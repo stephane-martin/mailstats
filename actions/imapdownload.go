@@ -6,13 +6,16 @@ import (
 	"github.com/emersion/go-imap"
 	"github.com/emersion/go-imap-compress"
 	"github.com/emersion/go-imap/client"
+	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"io/ioutil"
 	"math"
@@ -29,9 +32,11 @@ import (
 func IMAPDownloadAction(c *cli.Context) error {
 	args, err := arguments.GetArgs(c)
 	if err != nil {
-		return err
+		err = fmt.Errorf("error validating imapdownload cli arguments: %s", err)
+		return cli.NewExitError(err.Error(), 1)
 	}
-	logger := args.Logging.Build()
+	logger := logging.NewLogger(args)
+
 	uri := strings.TrimSpace(c.String("uri"))
 	if uri == "" {
 		return nil
@@ -59,15 +64,6 @@ func IMAPDownloadAction(c *cli.Context) error {
 	}
 	if maxDownloads > math.MaxUint32 {
 		maxDownloads = math.MaxUint32
-	}
-
-	if args.GeoIP.Enabled {
-		err := utils.InitGeoIP(args.GeoIP.DatabasePath)
-		if err != nil {
-			return cli.NewExitError(fmt.Sprintf("Error loading GeoIP database: %s", err), 1)
-		}
-		//noinspection GoUnhandledErrorResult
-		defer utils.CloseGeoIP()
 	}
 
 	username := strings.TrimSpace(u.User.Username())
@@ -125,51 +121,84 @@ func IMAPDownloadAction(c *cli.Context) error {
 	if mbox.Messages == 0 {
 		return nil
 	}
-	var nbDownloads uint32 = uint32(maxDownloads)
+	var nbDownloads = uint32(maxDownloads)
 	if nbDownloads > mbox.Messages {
 		nbDownloads = mbox.Messages
 	}
 
 	seqset := new(imap.SeqSet)
-
 	seqset.AddRange(1, mbox.Messages)
 
-	imapMsgs := make(chan *imap.Message)
-	section := &imap.BodySectionName{}
+	var theparser parser.Parser
+	var consumer consumers.Consumer
 
+	app := fx.New(
+		consumers.ConsumerService,
+		parser.Service,
+		extractors.ExifToolService,
+		utils.GeoIPService,
 
-	collector, err := collectors.NewChanCollector(args.Collector.CollectorSize, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
-	}
-
-	consumer, err := consumers.MakeConsumer(*args, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
-	}
+		fx.Provide(
+			func() *cli.Context { return c },
+			func() *arguments.Args { return args },
+			func() log15.Logger { return logger },
+		),
+		fx.Logger(logging.PrintfLogger{Logger: logger}),
+		fx.Invoke(func(p parser.Parser, c consumers.Consumer) {
+			// bootstrap the application
+			theparser = p
+			consumer = c
+		}),
+	)
 
 	sigchan := make(chan os.Signal, 1)
 	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
-	gctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		for sig := range sigchan {
-			logger.Info("Signal received", "signal", sig.String())
+		for range sigchan {
 			cancel()
 			_ = clt.Terminate()
 		}
 	}()
 
-	g, ctx := errgroup.WithContext(gctx)
+	startCtx, _ := context.WithTimeout(ctx, app.StartTimeout())
+	err = app.Start(startCtx)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("imapdownload action failed to start: %s", err), 1)
+	}
+	stopCtx, _ := context.WithTimeout(ctx, app.StopTimeout())
+	defer app.Stop(stopCtx)
 
-	theparser := parser.NewParser(logger)
-	//noinspection GoUnhandledErrorResult
-	defer theparser.Close()
+
+	g, lctx := errgroup.WithContext(ctx)
+
+	incomings := make(chan *models.IncomingMail)
+	features := make(chan *models.FeaturesMail)
+	imapMsgs := make(chan *imap.Message)
+	section := &imap.BodySectionName{}
+
 
 	g.Go(func() error {
-		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
-		logger.Info("ParseMails has returned", "error", err)
-		return err
+		theparser.ParseMany(lctx, incomings, features)
+		return nil
+	})
+
+	g.Go(func() error {
+		for {
+			select {
+			case <-lctx.Done():
+				return lctx.Err()
+			case feature, ok := <-features:
+				if !ok {
+					return nil
+				}
+				err := consumer.Consume(feature)
+				if err != nil {
+					return err
+				}
+			}
+		}
 	})
 
 	g.Go(func() error {
@@ -186,10 +215,7 @@ func IMAPDownloadAction(c *cli.Context) error {
 	})
 
 	g.Go(func() error {
-		defer func() {
-			logger.Info("No more messages")
-			_ = collector.Close()
-		}()
+		defer close(incomings)
 		for msg := range imapMsgs {
 			body, err := ioutil.ReadAll(msg.GetBody(section))
 			if err != nil {
@@ -206,18 +232,16 @@ func IMAPDownloadAction(c *cli.Context) error {
 				},
 				Data: body,
 			}
-			err = collector.PushCtx(ctx, incoming)
-			if err != nil {
-				return err
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case incomings <- incoming:
 			}
+
 		}
 		return nil
 	})
 
-	err = g.Wait()
-	if err != nil && err != context.Canceled {
-		logger.Warn("goroutine group error", "error", err)
-	}
-
+	_ = g.Wait()
 	return nil
 }

@@ -5,27 +5,30 @@ import (
 	"fmt"
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/collectors"
 	"github.com/stephane-martin/mailstats/consumers"
+	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/parser"
+	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
+	"go.uber.org/fx"
 	"golang.org/x/sync/errgroup"
 	"io/ioutil"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 )
 
 func MaildirAction(c *cli.Context) error {
 	args, err := arguments.GetArgs(c)
 	if err != nil {
-		return err
+		err = fmt.Errorf("error validating cli arguments: %s", err)
+		return cli.NewExitError(err.Error(), 1)
 	}
-	logger := args.Logging.Build()
+
+	logger := logging.NewLogger(args)
 
 	directory := strings.TrimSpace(c.String("directory"))
 	if directory == "" {
@@ -63,64 +66,88 @@ func MaildirAction(c *cli.Context) error {
 	})
 	logger.Info("Directories to inspect", "names", directories)
 
-	collector, err := collectors.NewChanCollector(args.Collector.CollectorSize, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build collector: %s", err), 3)
-	}
+	var theparser parser.Parser
+	var consumer consumers.Consumer
 
-	consumer, err := consumers.MakeConsumer(*args, logger)
-	if err != nil {
-		return cli.NewExitError(fmt.Sprintf("Failed to build consumer: %s", err), 3)
-	}
+	app := fx.New(
+		consumers.ConsumerService,
+		parser.Service,
+		extractors.ExifToolService,
+		utils.GeoIPService,
 
-	sigchan := make(chan os.Signal, 1)
-	signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM)
-	gctx, cancel := context.WithCancel(context.Background())
-
+		fx.Provide(
+			func() *cli.Context { return c },
+			func() *arguments.Args { return args },
+			func() log15.Logger { return logger },
+		),
+		fx.Logger(logging.PrintfLogger{Logger: logger}),
+		fx.Invoke(func(p parser.Parser, c consumers.Consumer) {
+			// bootstrap the application
+			theparser = p
+			consumer = c
+		}),
+	)
+	done := app.Done()
+	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
-		for sig := range sigchan {
-			logger.Info("Signal received", "signal", sig.String())
+		for range done {
 			cancel()
 		}
 	}()
 
-	g, ctx := errgroup.WithContext(gctx)
+	startCtx, _ := context.WithTimeout(ctx, app.StartTimeout())
+	err = app.Start(startCtx)
+	if err != nil {
+		return cli.NewExitError(fmt.Sprintf("mbox action failed to start: %s", err), 1)
+	}
+	stopCtx, _ := context.WithTimeout(ctx, app.StopTimeout())
+	defer app.Stop(stopCtx)
 
-	theparser := parser.NewParser(logger)
-	//noinspection GoUnhandledErrorResult
-	defer theparser.Close()
+	g, lctx := errgroup.WithContext(ctx)
+
+	incomings := make(chan *models.IncomingMail)
+	features := make(chan *models.FeaturesMail)
 
 	g.Go(func() error {
-		err := parser.ParseMails(ctx, collector, theparser, consumer, args.NbParsers, logger)
-		logger.Info("ParseMails has returned", "error", err)
-		return err
+		theparser.ParseMany(lctx, incomings, features)
+		return nil
 	})
 
 	g.Go(func() error {
-		defer func() {
-			logger.Info("No more messages")
-			_ = collector.Close()
-		}()
+		for {
+			select {
+			case <-lctx.Done():
+				return lctx.Err()
+			case feature, ok := <-features:
+				if !ok {
+					return nil
+				}
+				err := consumer.Consume(feature)
+				if err != nil {
+					return err
+				}
+			}
+		}
+	})
+
+	g.Go(func() error {
+		defer close(incomings)
 		for _, dir := range directories {
-			err := readDir(ctx, dir, collector, logger)
+			err := readDir(lctx, dir, incomings, logger)
 			if err != nil {
+				logger.Warn("Error reading maildir", "error", err)
 				return err
 			}
 		}
 		return nil
 	})
 
-	err = g.Wait()
-	if err != nil && err != context.Canceled {
-		logger.Warn("goroutine group error", "error", err)
-	}
-
+	_ = g.Wait()
 	return nil
 
 }
 
-
-func readDir(ctx context.Context, dir string, collector collectors.Collector, logger log15.Logger) error {
+func readDir(ctx context.Context, dir string, incomings chan<- *models.IncomingMail, logger log15.Logger) error {
 	d, err := os.Open(dir)
 	if err != nil {
 		logger.Warn("Failed to open directory", "name", d, "error", err)
@@ -134,7 +161,7 @@ func readDir(ctx context.Context, dir string, collector collectors.Collector, lo
 	for _, info := range infos {
 		name := filepath.Join(dir, info.Name())
 		if info.IsDir() {
-			err := readDir(ctx, name, collector, logger)
+			err := readDir(ctx, name, incomings, logger)
 			if err != nil {
 				return err
 			}
@@ -158,10 +185,12 @@ func readDir(ctx context.Context, dir string, collector collectors.Collector, lo
 			},
 			Data: content,
 		}
-		err = collector.PushCtx(ctx, incoming)
-		if err != nil {
-			return err
+		select {
+		case incomings <- incoming:
+		case <-ctx.Done():
+			return ctx.Err()
 		}
+
 	}
 	return nil
 }

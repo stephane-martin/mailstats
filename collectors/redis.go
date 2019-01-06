@@ -21,7 +21,6 @@ type RedisCollector struct {
 	client *redis.Client
 	key    string
 	curkey string
-	stop   chan struct{}
 }
 
 func NewRedisCollector(args arguments.RedisArgs, logger log15.Logger) (*RedisCollector, error) {
@@ -32,10 +31,13 @@ func NewRedisCollector(args arguments.RedisArgs, logger log15.Logger) (*RedisCol
 	return &RedisCollector{
 		logger: logger,
 		client: client,
-		stop:   make(chan struct{}),
 		key:    args.CollectorKey,
 		curkey: args.CollectorKey + "_pending",
 	}, nil
+}
+
+func (c *RedisCollector) Name() string {
+	return "RedisCollector"
 }
 
 func (c *RedisCollector) rePush() error {
@@ -77,10 +79,10 @@ func (c *RedisCollector) rePush() error {
 	}, c.curkey)
 }
 
-func (c *RedisCollector) Start() error {
+func (c *RedisCollector) Start(ctx context.Context) error {
 	for {
 		select {
-		case <-c.stop:
+		case <-ctx.Done():
 			return nil
 		case <-time.After(time.Minute):
 			var err error
@@ -189,9 +191,7 @@ func (c *RedisCollector) PullCtx(ctx context.Context) (*models.IncomingMail, err
 }
 
 func (c *RedisCollector) Close() error {
-	err := c.client.Close()
-	close(c.stop)
-	return err
+	return c.client.Close()
 }
 
 func (c *RedisCollector) ACK(uid ulid.ULID) {

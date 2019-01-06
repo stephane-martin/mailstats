@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"github.com/inconshreveable/log15"
 	"github.com/olivere/elastic"
+	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
 	"net/http"
 	"time"
 )
@@ -22,8 +22,8 @@ func NewElasticsearchConsumer(urls []string, indexName string, logger log15.Logg
 		Timeout: 10 * time.Second,
 	}
 
-	c, err := elastic.NewClient(
-		elastic.SetErrorLog(&utils.ElasticErrorLogger{Logger: logger}),
+	client, err := elastic.NewClient(
+		elastic.SetErrorLog(&logging.PrintfLogger{Logger: logger}),
 		elastic.SetHealthcheck(true),
 		elastic.SetSniff(false),
 		elastic.SetRetrier(
@@ -42,7 +42,19 @@ func NewElasticsearchConsumer(urls []string, indexName string, logger log15.Logg
 	if err != nil {
 		return nil, err
 	}
-	p, err := c.BulkProcessor().
+
+	return &ElasticsearchConsumer{
+		client:    client,
+		indexName: indexName,
+	}, nil
+}
+
+func (c *ElasticsearchConsumer) Name() string {
+	return "ElasticsearchConsumer"
+}
+
+func (c *ElasticsearchConsumer) Prestart() error {
+	processor, err := c.client.BulkProcessor().
 		Name("mailstats_bulk_processor").
 		BulkActions(-1).
 		BulkSize(-1).
@@ -51,15 +63,10 @@ func NewElasticsearchConsumer(urls []string, indexName string, logger log15.Logg
 		FlushInterval(5 * time.Second).Do(context.Background())
 
 	if err != nil {
-		c.Stop()
-		return nil, err
+		return err
 	}
-
-	return &ElasticsearchConsumer{
-		client: c,
-		processor: p,
-		indexName: indexName,
-	}, nil
+	c.processor = processor
+	return nil
 }
 
 func (c *ElasticsearchConsumer) Consume(features *models.FeaturesMail) error {

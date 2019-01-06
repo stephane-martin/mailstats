@@ -18,7 +18,9 @@ import (
 	"github.com/stephane-martin/mailstats/metrics"
 	"github.com/stephane-martin/mailstats/models"
 	"github.com/stephane-martin/mailstats/sbox"
+	"github.com/stephane-martin/mailstats/utils"
 	"github.com/uber-go/atomic"
+	"go.uber.org/fx"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -203,7 +205,17 @@ func prepare(obj interface{}, c *gin.Context) (ulid.ULID, error) {
 }
 
 
-func StartMaster(ctx context.Context, args arguments.HTTPArgs, secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) error {
+type HTTPMasterEngine *gin.Engine
+
+type HTTPMasterServer struct {
+	*http.Server
+	logger log15.Logger
+	addr string
+	port int
+}
+
+
+func NewHTTPMasterEngine(secret *memguard.LockedBuffer, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) HTTPMasterEngine {
 	router := gin.Default()
 	workerTimes := &sync.Map{}
 
@@ -211,211 +223,231 @@ func StartMaster(ctx context.Context, args arguments.HTTPArgs, secret *memguard.
 		c.Status(200)
 	})
 
-	if secret != nil {
-		router.POST("/worker/init/:worker", func(c *gin.Context) {
-			workerID, err := ulid.Parse(c.Param("worker"))
-			if err != nil {
-				logger.Warn("Failed to parse worker ID", "error", err)
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			var pInit initRequest
-			_ = c.BindJSON(&pInit)
-			logger.Debug("init request", "worker", workerID.String())
-			if pakeSessionKeys.Has(workerID) {
-				logger.Warn("Worker is already authenticated")
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			if pakeRecipients.Has(workerID) {
-				logger.Warn("Worker is already initialized")
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			p, err := base64.StdEncoding.DecodeString(pInit.Pake)
-			if err != nil {
-				logger.Warn("Failed to base64 decode pake init request", "error", err)
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			if secret == nil {
-				logger.Warn("Got a pake init request, but secret is not set")
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			recipient, err := NewRecipient(secret)
-			if err != nil {
-				logger.Warn("Failed to initialize pake recipient", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			err = recipient.Update(p)
-			if err != nil {
-				logger.Warn("Failed to update pake recipient", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			err = pakeRecipients.Put(workerID, recipient)
-			if err != nil {
-				logger.Warn("Failed to store new PAKE recipient", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			c.JSON(200, initResponse{HK: base64.StdEncoding.EncodeToString(recipient.Bytes())})
-		})
+	router.POST("/worker/init/:worker", func(c *gin.Context) {
+		workerID, err := ulid.Parse(c.Param("worker"))
+		if err != nil {
+			logger.Warn("Failed to parse worker ID", "error", err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		var pInit initRequest
+		_ = c.BindJSON(&pInit)
+		logger.Debug("init request", "worker", workerID.String())
+		if pakeSessionKeys.Has(workerID) {
+			logger.Warn("Worker is already authenticated")
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if pakeRecipients.Has(workerID) {
+			logger.Warn("Worker is already initialized")
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		p, err := base64.StdEncoding.DecodeString(pInit.Pake)
+		if err != nil {
+			logger.Warn("Failed to base64 decode pake init request", "error", err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		if secret == nil {
+			logger.Warn("Got a pake init request, but secret is not set")
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		recipient, err := NewRecipient(secret)
+		if err != nil {
+			logger.Warn("Failed to initialize pake recipient", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		err = recipient.Update(p)
+		if err != nil {
+			logger.Warn("Failed to update pake recipient", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		err = pakeRecipients.Put(workerID, recipient)
+		if err != nil {
+			logger.Warn("Failed to store new PAKE recipient", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		c.JSON(200, initResponse{HK: base64.StdEncoding.EncodeToString(recipient.Bytes())})
+	})
 
-		router.POST("/worker/auth/:worker", func(c *gin.Context) {
-			workerID, err := ulid.Parse(c.Param("worker"))
-			if err != nil {
-				logger.Warn("Failed to parse worker ID", "error", err)
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			logger.Debug("auth request", "worker", workerID.String())
-			if pakeSessionKeys.Has(workerID) {
-				logger.Warn("Worker is already authenticated")
-				c.Status(http.StatusBadRequest)
-				return
-			}
-			recipient, err := pakeRecipients.Get(workerID)
-			if err != nil {
-				logger.Warn("Worker is not initialized", "error", err)
-				c.Status(http.StatusBadRequest)
-				return
-			}
+	router.POST("/worker/auth/:worker", func(c *gin.Context) {
+		workerID, err := ulid.Parse(c.Param("worker"))
+		if err != nil {
+			logger.Warn("Failed to parse worker ID", "error", err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		logger.Debug("auth request", "worker", workerID.String())
+		if pakeSessionKeys.Has(workerID) {
+			logger.Warn("Worker is already authenticated")
+			c.Status(http.StatusBadRequest)
+			return
+		}
+		recipient, err := pakeRecipients.Get(workerID)
+		if err != nil {
+			logger.Warn("Worker is not initialized", "error", err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
 
-			var pAuth authRequest
-			_ = c.BindJSON(&pAuth)
-			hk, err := base64.StdEncoding.DecodeString(pAuth.HK)
-			if err != nil {
-				logger.Warn("Failed to base64 decode work HK", "error", err)
-				c.Status(http.StatusBadRequest)
-				return
-			}
+		var pAuth authRequest
+		_ = c.BindJSON(&pAuth)
+		hk, err := base64.StdEncoding.DecodeString(pAuth.HK)
+		if err != nil {
+			logger.Warn("Failed to base64 decode work HK", "error", err)
+			c.Status(http.StatusBadRequest)
+			return
+		}
 
-			err = recipient.Update(hk)
-			if err != nil {
-				logger.Warn("Failed to update recipient after auth request", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			skey, err := recipient.SessionKey()
-			if err != nil {
-				logger.Warn("Failed to retrieve session key", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			err = pakeSessionKeys.Put(workerID, skey)
-			if err != nil {
-				logger.Warn("Failed to store new session key", "error", err)
-				c.Status(http.StatusInternalServerError)
-				return
-			}
-			pakeRecipients.Erase(workerID)
-			increments.NewWorker(workerID)
-		})
+		err = recipient.Update(hk)
+		if err != nil {
+			logger.Warn("Failed to update recipient after auth request", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		skey, err := recipient.SessionKey()
+		if err != nil {
+			logger.Warn("Failed to retrieve session key", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		err = pakeSessionKeys.Put(workerID, skey)
+		if err != nil {
+			logger.Warn("Failed to store new session key", "error", err)
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		pakeRecipients.Erase(workerID)
+		increments.NewWorker(workerID)
+	})
 
-		router.POST("/worker/bye/:worker", func(c *gin.Context) {
-			var obj byeRequest
-			workerID, err := prepare(&obj, c)
-			if err != nil {
-				logger.Warn("Error decoding worker request", "error", err)
-				return
-			}
-			increments.Erase(workerID)
-			pakeSessionKeys.Erase(workerID)
-		})
+	router.POST("/worker/bye/:worker", func(c *gin.Context) {
+		var obj byeRequest
+		workerID, err := prepare(&obj, c)
+		if err != nil {
+			logger.Warn("Error decoding worker request", "error", err)
+			return
+		}
+		increments.Erase(workerID)
+		pakeSessionKeys.Erase(workerID)
+	})
 
-		router.POST("/worker/work/:worker", func(c *gin.Context) {
-			var obj workRequest
-			workerID, err := prepare(&obj, c)
+	router.POST("/worker/work/:worker", func(c *gin.Context) {
+		var obj workRequest
+		workerID, err := prepare(&obj, c)
+		if err != nil {
+			logger.Warn("Error decoding worker request", "error", err)
+			return
+		}
+		work, err := collector.PullCtx(c.Request.Context())
+		if err == nil {
+			j, err := work.MarshalMsg(nil)
 			if err != nil {
-				logger.Warn("Error decoding worker request", "error", err)
+				c.Status(500)
 				return
 			}
-			work, err := collector.PullCtx(c.Request.Context())
-			if err == nil {
-				j, err := work.MarshalMsg(nil)
-				if err != nil {
-					c.Status(500)
-					return
-				}
-				key, err := pakeSessionKeys.Get(workerID)
-				if err != nil {
-					c.Status(500)
-					return
-				}
-				enc, err := sbox.Encrypt(j, key)
-				if err != nil {
-					c.Status(500)
-					return
-				}
-				c.Data(200, "application/octet-stream", enc)
-				workerTimes.Store(ulid.ULID(work.UID), time.Now())
+			key, err := pakeSessionKeys.Get(workerID)
+			if err != nil {
+				c.Status(500)
 				return
 			}
-			if err == context.Canceled {
-				logger.Debug("Worker is gone")
+			enc, err := sbox.Encrypt(j, key)
+			if err != nil {
+				c.Status(500)
 				return
 			}
-			logger.Warn("Error getting some work", "error", err)
-			c.Status(500)
-		})
+			c.Data(200, "application/octet-stream", enc)
+			workerTimes.Store(ulid.ULID(work.UID), time.Now())
+			return
+		}
+		if err == context.Canceled {
+			logger.Debug("Worker is gone")
+			return
+		}
+		logger.Warn("Error getting some work", "error", err)
+		c.Status(500)
+	})
 
-		router.POST("/worker/submit/:worker", func(c *gin.Context) {
-			features := new(models.FeaturesMail)
-			_, err := prepare(features, c)
+	router.POST("/worker/submit/:worker", func(c *gin.Context) {
+		features := new(models.FeaturesMail)
+		_, err := prepare(features, c)
+		if err != nil {
+			logger.Warn("Error decoding worker request", "error", err)
+			return
+		}
+		uid := ulid.MustParse(features.UID)
+		if start, ok := workerTimes.Load(uid); ok {
+			metrics.M().ParsingDuration.Observe(time.Now().Sub(start.(time.Time)).Seconds())
+			workerTimes.Delete(uid)
+		}
+		collector.ACK(uid)
+		go func() {
+			err := consumer.Consume(features)
 			if err != nil {
-				logger.Warn("Error decoding worker request", "error", err)
-				return
+				logger.Warn("Failed to consume parsing results", "error", err)
+			} else {
+				logger.Debug("Parsing results sent to consumer")
 			}
-			uid := ulid.MustParse(features.UID)
-			if start, ok := workerTimes.Load(uid); ok {
-				metrics.M().ParsingDuration.Observe(time.Now().Sub(start.(time.Time)).Seconds())
-				workerTimes.Delete(uid)
-			}
+		}()
+	})
+
+	router.POST("/worker/ack/:worker", func(c *gin.Context) {
+		var obj ackRequest
+		_, err := prepare(&obj, c)
+		if err != nil {
+			logger.Warn("Error decoding ACK request", "error", err)
+			return
+		}
+		uid, err := ulid.Parse(obj.UID)
+		if err == nil {
 			collector.ACK(uid)
-			go func() {
-				err := consumer.Consume(features)
-				if err != nil {
-					logger.Warn("Failed to consume parsing results", "error", err)
-				} else {
-					logger.Debug("Parsing results sent to consumer")
-				}
-			}()
-		})
+		}
+	})
 
-		router.POST("/worker/ack/:worker", func(c *gin.Context) {
-			var obj ackRequest
-			_, err := prepare(&obj, c)
-			if err != nil {
-				logger.Warn("Error decoding ACK request", "error", err)
-				return
-			}
-			uid, err := ulid.Parse(obj.UID)
-			if err == nil {
-				collector.ACK(uid)
-			}
-		})
+	return router
+}
+
+func (s HTTPMasterServer) Name() string { return "HTTPMasterServer" }
+
+func (s HTTPMasterServer) Start(ctx context.Context) error {
+	addr := net.JoinHostPort(s.addr, fmt.Sprintf("%d", s.port))
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return err
 	}
-
-	svc := &http.Server{
-		Addr:    net.JoinHostPort(args.ListenAddrMaster, fmt.Sprintf("%d", args.ListenPortMaster)),
-		Handler: router,
-	}
-
 	go func() {
 		<-ctx.Done()
-		_ = svc.Close()
-		logger.Info("Master service closed")
+		_ = s.Server.Close()
 	}()
-
-	logger.Info("Starting Master service")
-
-	err := svc.ListenAndServe()
-	if err != nil {
-		logger.Info("Master service error", "error", err)
-	}
-	return err
-
+	s.logger.Info("Starting HTTP Master service")
+	return s.Server.Serve(listener)
 }
+
+func NewHTTPMasterServer(args *arguments.Args, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) *HTTPMasterServer {
+	var engine *gin.Engine = NewHTTPMasterEngine(args.Secret, collector, consumer, logger)
+
+	server := &http.Server{
+		Handler: engine,
+	}
+
+	return &HTTPMasterServer{
+		logger: logger,
+		Server: server,
+		addr: args.HTTP.ListenAddrMaster,
+		port: args.HTTP.ListenPortMaster,
+	}
+}
+
+var HTTPMasterService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, collector collectors.Collector, consumer consumers.Consumer, logger log15.Logger) *HTTPMasterServer {
+	if args.Secret == nil {
+		return nil
+	}
+	s := NewHTTPMasterServer(args, collector, consumer, logger)
+	utils.Append(lc, s, logger)
+	return s
+})

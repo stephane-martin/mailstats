@@ -1,39 +1,50 @@
 package forwarders
 
 import (
-	"context"
 	"fmt"
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
+	"go.uber.org/fx"
 )
 
-func Build(args arguments.ForwardArgs, logger log15.Logger) (Forwarder, error) {
-	scheme, host, port, username, password := args.Parsed()
+type Forwarder interface {
+	utils.Service
+	Forward(mail *models.IncomingMail)
+}
+
+func NewForwarder(args *arguments.Args, logger log15.Logger) (Forwarder, error) {
+	scheme, host, port, username, password := args.Forward.Parsed()
 	if host == "" {
 		logger.Info("No forwarding")
 		return new(DummyForwarder), nil
 	}
+	var f Forwarder
 	switch scheme {
 	case "smtp", "smtps":
 		if len(username) == 0 || len(password) == 0 {
-			return NewSMTPForwarder(scheme, host, port, "", "", logger), nil
+			f = NewSMTPForwarder(scheme, host, port, "", "", logger)
+		} else {
+			f = NewSMTPForwarder(scheme, host, port, username, password, logger)
 		}
-		return NewSMTPForwarder(scheme, host, port, username, password, logger), nil
 	case "http", "https":
-		return NewHTTPForwarder(args.URL, logger), nil
+		f = NewHTTPForwarder(args.Forward.URL, logger)
 	default:
 		return nil, fmt.Errorf("unknown forwarder type: %s", scheme)
 	}
 
+	return f, nil
 
 }
 
-type Forwarder interface {
-	Forward(mail *models.IncomingMail)
-	Start(ctx context.Context) error
-	Close() error
-}
 
-
+var ForwarderService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (Forwarder, error) {
+	f, err := NewForwarder(args, logger)
+	if err != nil {
+		return nil, err
+	}
+	utils.Append(lc, f, logger)
+	return f, nil
+})
 

@@ -19,14 +19,22 @@ func NewFSCollector(root string, logger log15.Logger) (*FSCollector, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &FSCollector{BaseCollector: newBaseCollector(10000), store: store}
+	c := &FSCollector{
+		BaseCollector: newBaseCollector(10000),
+		store: store,
+	}
 
 	return c, nil
 }
 
-func (c *FSCollector) Start() error {
+func (c *FSCollector) Name() string { return "FSCollector" }
+
+func (c *FSCollector) Start(ctx context.Context) error {
+	go func() {
+		c.BaseCollector.Start(ctx)
+	}()
 	for m := range c.BaseCollector.Ch {
-		_ = c.Push(nil, m)
+		_ = c.PushCtx(ctx, m)
 	}
 	return nil
 }
@@ -64,7 +72,6 @@ func (c *FSCollector) PullCtx(ctx context.Context) (*models.IncomingMail, error)
 }
 
 func (c *FSCollector) Close() error {
-	c.BaseCollector.Close()
 	return c.store.Close()
 }
 

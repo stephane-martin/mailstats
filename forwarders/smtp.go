@@ -24,15 +24,17 @@ type SMTPForwarder struct {
 
 func NewSMTPForwarder(scheme string, host string, port string, username string, password string, logger log15.Logger) *SMTPForwarder {
 	return &SMTPForwarder{
-		Scheme: scheme,
-		Host: host,
-		Port: port,
-		Username: username,
-		Password: password,
-		Logger: logger,
+		Scheme:    scheme,
+		Host:      host,
+		Port:      port,
+		Username:  username,
+		Password:  password,
+		Logger:    logger,
 		mailsChan: make(chan *models.IncomingMail, 10000),
 	}
 }
+
+func (f *SMTPForwarder) Name() string { return "SMTPForwarder" }
 
 func (f *SMTPForwarder) Close() error {
 	close(f.mailsChan)
@@ -44,6 +46,7 @@ func (f *SMTPForwarder) Start(ctx context.Context) error {
 	var rest []*models.IncomingMail
 	var err error
 	batchOfMessages := make([]*models.IncomingMail, 0)
+
 	for {
 		batchOfMessages, stop = chan2buffer(f.mailsChan)
 		if len(rest) > 0 {
@@ -55,7 +58,7 @@ func (f *SMTPForwarder) Start(ctx context.Context) error {
 				f.Logger.Warn("Error forwarding emails", "error", err)
 				select {
 				case <-ctx.Done():
-					return context.Canceled
+					return ctx.Err()
 				case <-time.After(10 * time.Second):
 				}
 			}

@@ -3,9 +3,12 @@ package utils
 import (
 	"archive/tar"
 	"compress/gzip"
+	"github.com/inconshreveable/log15"
 	"github.com/oschwald/geoip2-golang"
 	"github.com/pkg/errors"
+	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
+	"go.uber.org/fx"
 	"io"
 	"net"
 	"net/http"
@@ -13,26 +16,72 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 )
 
 var geoipReader *geoip2.Reader
-var geoipLock sync.Mutex
 var geoipFile = "/var/lib/mailstats/GeoLite2-City/GeoLite2-City.mmdb"
 var GeoIPURL = "https://geolite.maxmind.com/download/geoip/database/GeoLite2-City.tar.gz"
 
-func InitGeoIP(filename string) error {
-	filename = strings.TrimSpace(filename)
-	if filename == "" {
-		filename = geoipFile
-	}
-	r, err := geoip2.Open(filename)
+type GeoIP interface {
+	Service
+	GeoIP(ip net.IP) (*models.GeoIPResult, error)
+}
+
+type geoIPImpl struct {
+	reader *geoip2.Reader
+}
+
+func NewGeoIP(databasePath string) (GeoIP, error) {
+	r, err := geoip2.Open(databasePath)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	geoipReader = r
+	return &geoIPImpl{reader: r}, nil
+}
+
+var GeoIPService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (GeoIP, error) {
+	if !args.GeoIP.Enabled {
+		return nil, nil
+	}
+	s, err := NewGeoIP(args.GeoIP.DatabasePath)
+	if err != nil {
+		return nil, err
+	}
+	if lc != nil && s != nil {
+		Append(lc, s, logger)
+	}
+	return s, nil
+})
+
+func (g *geoIPImpl) Name() string { return "GeoIP"}
+
+func (g *geoIPImpl) Close() error {
+	if g.reader != nil {
+		return g.reader.Close()
+	}
 	return nil
 }
+
+
+func (g *geoIPImpl) GeoIP(ip net.IP) (*models.GeoIPResult, error) {
+	if g == nil {
+		return nil, errors.New("GeoIP database not loaded")
+	}
+	c, err := geoipReader.City(ip)
+	if err != nil {
+		return nil, err
+	}
+	return &models.GeoIPResult{
+		Country:   c.Country.Names["en"],
+		Continent: c.Continent.Names["en"],
+		City:      c.City.Names["en"],
+		Coordinates: &models.LatLon{
+			Latitude:  c.Location.Latitude,
+			Longitude: c.Location.Longitude,
+		},
+	}, nil
+}
+
 
 func DownloadGeoIP(dest, u string) error {
 	dest = strings.TrimSpace(dest)
@@ -138,36 +187,3 @@ func DownloadGeoIP(dest, u string) error {
 	return nil
 }
 
-func GeoIPEnabled() bool {
-	return geoipReader != nil
-}
-
-func CloseGeoIP() error {
-	geoipLock.Lock()
-	defer geoipLock.Unlock()
-	if geoipReader == nil {
-		return nil
-	}
-	err := geoipReader.Close()
-	geoipReader = nil
-	return err
-}
-
-func GeoIP(ip net.IP) (*models.GeoIPResult, error) {
-	if !GeoIPEnabled() {
-		return nil, errors.New("GeoIP database not loaded")
-	}
-	c, err := geoipReader.City(ip)
-	if err != nil {
-		return nil, err
-	}
-	return &models.GeoIPResult{
-		Country:   c.Country.Names["en"],
-		Continent: c.Continent.Names["en"],
-		City:      c.City.Names["en"],
-		Coordinates: &models.LatLon{
-			Latitude:  c.Location.Latitude,
-			Longitude: c.Location.Longitude,
-		},
-	}, nil
-}

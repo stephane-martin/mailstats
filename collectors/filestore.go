@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"github.com/fsnotify/fsnotify"
+	"github.com/google/renameio"
 	"github.com/inconshreveable/log15"
 	"github.com/oklog/ulid"
 	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/utils"
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"os"
@@ -108,25 +108,20 @@ func (s *FileStore) Close() error {
 }
 
 func (s *FileStore) New(uid ulid.ULID, obj *models.IncomingMail) error {
-	tmppath := filepath.Join(s.tmp, uid.String())
 	dest := filepath.Join(s.new, uid.String())
-	f, err := os.OpenFile(tmppath, os.O_CREATE|os.O_WRONLY, 0644)
+	t, err := renameio.TempFile(s.tmp, dest)
 	if err != nil {
 		return err
 	}
-	err = utils.Autoclose(f, func() error {
-		return msgp.Encode(f, obj)
-	})
-	if err != nil {
-		_ = os.Remove(tmppath)
+	//noinspection GoUnhandledErrorResult
+	defer t.Cleanup()
+	if err := t.Chmod(0644); err != nil {
 		return err
 	}
-	err = os.Rename(tmppath, dest)
-	if err != nil {
-		_ = os.Remove(tmppath)
+	if err := msgp.Encode(t, obj); err != nil {
 		return err
 	}
-	return nil
+	return t.CloseAtomicallyReplace()
 }
 
 func (s *FileStore) readDirNew() (string, error) {

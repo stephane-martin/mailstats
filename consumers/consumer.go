@@ -5,15 +5,16 @@ import (
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/utils"
+	"go.uber.org/fx"
 )
 
 type Consumer interface {
+	utils.Service
 	Consume(features *models.FeaturesMail) error
-	Close() error
 }
 
-
-func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
+func NewConsumer(args *arguments.Args, logger log15.Logger) (Consumer, error) {
 	switch args.Consumer.GetType() {
 	case arguments.Stdout:
 		return StdoutConsumer, nil
@@ -35,3 +36,12 @@ func MakeConsumer(args arguments.Args, logger log15.Logger) (Consumer, error) {
 		return nil, errors.New("unknown consumer type")
 	}
 }
+
+var ConsumerService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (Consumer, error) {
+	c, err := NewConsumer(args, logger)
+	if err != nil {
+		return nil, err
+	}
+	utils.Append(lc, c, logger)
+	return c, nil
+})

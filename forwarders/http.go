@@ -1,7 +1,6 @@
 package forwarders
 
 import (
-	"context"
 	"github.com/gojektech/heimdall/httpclient"
 	"github.com/inconshreveable/log15"
 	"github.com/oklog/ulid"
@@ -33,6 +32,8 @@ func NewHTTPForwarder(url string, logger log15.Logger) *HTTPForwarder {
 	}
 }
 
+func (f *HTTPForwarder) Name() string { return "HTTPForwarder" }
+
 func (f *HTTPForwarder) Forward(mail *models.IncomingMail) {
 	r, w := io.Pipe()
 	go func() {
@@ -56,11 +57,3 @@ func (f *HTTPForwarder) Forward(mail *models.IncomingMail) {
 	}()
 }
 
-func (_ *HTTPForwarder) Start(ctx context.Context) error {
-	<-ctx.Done()
-	return nil
-}
-
-func (f *HTTPForwarder) Close() error {
-	return nil
-}

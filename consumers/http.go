@@ -39,6 +39,7 @@ func (c *HTTPConsumer) Consume(features *models.FeaturesMail) error {
 	return err
 }
 
-func (c *HTTPConsumer) Close() error {
-	return nil
+func (c *HTTPConsumer) Name() string {
+	return "HTTPConsumer"
+
 }

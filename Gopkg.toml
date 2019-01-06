@@ -194,6 +194,14 @@
     name = "github.com/gojektech/heimdall"
     version = "5.0.2"
 
+[[constraint]]
+    name = "go.uber.org/fx"
+    version = "1.8.0"
+
+[[constraint]]
+    name = "github.com/google/renameio"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

@@ -1,11 +1,8 @@
 package arguments
 
 import (
-	"github.com/inconshreveable/log15"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
-	"log/syslog"
-	"os"
 	"strings"
 )
 
@@ -25,31 +22,3 @@ func (args *LoggingArgs) Verify() error {
 	return v.GetError()
 }
 
-func (args LoggingArgs) Build() log15.Logger {
-
-	lvl, _ := log15.LvlFromString(args.LogLevel)
-	logger := log15.New()
-	if args.Syslog {
-		logger.SetHandler(
-			log15.LvlFilterHandler(
-				lvl,
-				log15.Must.SyslogHandler(
-					syslog.LOG_INFO|syslog.LOG_DAEMON,
-					"mailstats",
-					log15.JsonFormat(),
-				),
-			),
-		)
-	} else {
-		logger.SetHandler(
-			log15.LvlFilterHandler(
-				lvl,
-				log15.StreamHandler(
-					os.Stderr,
-					log15.LogfmtFormat(),
-				),
-			),
-		)
-	}
-	return logger
-}

@@ -21,7 +21,6 @@ type RabbitCollector struct {
 	consumer  *rabbus.Rabbus
 	exchange  string
 	queue     string
-	cancel    context.CancelFunc
 	incoming  chan rabbus.ConsumerMessage
 	uidToTag  sync.Map
 }
@@ -73,6 +72,8 @@ func NewRabbitCollector(args arguments.RabbitArgs, logger log15.Logger) (*Rabbit
 		incoming:  incoming,
 	}, nil
 }
+
+func (c *RabbitCollector) Name() string { return "RabbitCollector" }
 
 func (c *RabbitCollector) Push(stop <-chan struct{}, m *models.IncomingMail) error {
 	metrics.M().MailFrom.WithLabelValues(m.MailFrom, m.Family).Inc()
@@ -142,19 +143,15 @@ func (c *RabbitCollector) ACK(uid ulid.ULID) {
 	}
 }
 
-func (c *RabbitCollector) Start() error {
-	gctx, cancel := context.WithCancel(context.Background())
-	c.cancel = cancel
-	g, ctx := errgroup.WithContext(gctx)
+func (c *RabbitCollector) Start(ctx context.Context) error {
+	g, lctx := errgroup.WithContext(ctx)
 
 	go func() {
 		err, ok := <-c.publisher.EmitErr()
-		if ok {
-			c.logger.Error("Error pushing message to RabbitMQ", "error", err)
-			for range c.publisher.EmitErr() {
-			}
-			cancel()
+		if !ok {
+			return
 		}
+		c.logger.Error("Error pushing message to RabbitMQ", "error", err)
 	}()
 	go func() {
 		for range c.publisher.EmitOk() {
@@ -163,21 +160,21 @@ func (c *RabbitCollector) Start() error {
 	}()
 
 	g.Go(func() error {
-		return c.consumer.Run(ctx)
+		return c.consumer.Run(lctx)
 	})
 	g.Go(func() error {
-		return c.publisher.Run(ctx)
+		return c.publisher.Run(lctx)
 	})
 
-	err := g.Wait()
-	_ = c.consumer.Close()
-	_ = c.publisher.Close()
-	return err
+	return g.Wait()
 }
 
 func (c *RabbitCollector) Close() error {
-	if c.cancel != nil {
-		c.cancel()
+	if c.consumer != nil {
+		_ = c.consumer.Close()
+	}
+	if c.publisher != nil {
+		_ = c.publisher.Close()
 	}
 	return nil
 }

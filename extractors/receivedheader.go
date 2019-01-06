@@ -19,7 +19,7 @@ var receivedHeaderRE = regexp.MustCompile(`(from ([^\s();]+)\s+(\(\s*(([^\s\[]+)
 var envelopeRE = regexp.MustCompile(`\(envelope-from (\S+)\)`)
 var heloRE = regexp.MustCompile(`helo=([^\s()[\]]+)`)
 
-func ParseReceivedHeader(h string, logger log15.Logger) (e models.ReceivedElement) {
+func ParseReceivedHeader(h string, geoip utils.GeoIP, logger log15.Logger) (e models.ReceivedElement) {
 	e.Raw = h
 	envMatches := envelopeRE.FindStringSubmatch(h)
 	if len(envMatches) == 2 {
@@ -64,8 +64,8 @@ func ParseReceivedHeader(h string, logger log15.Logger) (e models.ReceivedElemen
 		if ip := net.ParseIP(e.From.IP.Reported); ip != nil {
 			e.From.IP.Parsed = ip
 			e.From.IP.Public = !utils.IsPrivateIP(e.From.IP.Parsed)
-			if e.From.IP.Public && utils.GeoIPEnabled() {
-				l, err := utils.GeoIP(e.From.IP.Parsed)
+			if e.From.IP.Public && geoip != nil {
+				l, err := geoip.GeoIP(e.From.IP.Parsed)
 				if err == nil {
 					e.From.IP.Location = l
 				}

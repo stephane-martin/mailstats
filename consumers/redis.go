@@ -15,6 +15,10 @@ func NewRedisConsumer(args arguments.RedisArgs) (*RedisConsumer, error) {
 	return &RedisConsumer{client: client, args: args}, nil
 }
 
+func (c *RedisConsumer) Name() string {
+	return "RedisConsumer"
+}
+
 func (c *RedisConsumer) Consume(features *models.FeaturesMail) error {
 	b, err := utils.JSONMarshal(features)
 	if err != nil {

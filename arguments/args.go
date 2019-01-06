@@ -1,6 +1,7 @@
 package arguments
 
 import (
+	"fmt"
 	"runtime"
 	"strings"
 
@@ -52,7 +53,7 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		i.Populate(c)
 		err := i.Verify()
 		if err != nil {
-			return nil, cli.NewExitError(err.Error(), 1)
+			return nil, err
 		}
 	}
 
@@ -60,7 +61,7 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	if len(sec) > 0 {
 		secret, err := memguard.NewImmutableFromBytes([]byte(sec))
 		if err != nil {
-			return nil, cli.NewExitError("memguard failed", 1)
+			return nil, fmt.Errorf("memguard failure: %s", err)
 		}
 		args.Secret = secret
 	}

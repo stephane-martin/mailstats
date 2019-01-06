@@ -9,27 +9,45 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 )
 
-
 type ChanCollector struct {
 	BaseCollector
-	ch         chan *models.IncomingMail
-	logger     log15.Logger
+	ch     chan *models.IncomingMail
+	logger log15.Logger
+	size   int
 }
 
 func NewChanCollector(size int, logger log15.Logger) (*ChanCollector, error) {
 	if size <= 0 {
 		size = 10000
 	}
-	c := &ChanCollector{BaseCollector: newBaseCollector(size), logger: logger}
-	c.ch = make(chan *models.IncomingMail, size)
+	c := &ChanCollector{
+		logger: logger,
+		size: size,
+		ch: make(chan *models.IncomingMail, size),
+		BaseCollector: newBaseCollector(size),
+	}
 	return c, nil
 }
 
+func (c *ChanCollector) Name() string { return "ChanCollector" }
 
-func (c *ChanCollector) Start() error {
-	for m := range c.BaseCollector.Ch {
-		_ = c.Push(c.BaseCollector.Stop, m)
+func (c *ChanCollector) Start(ctx context.Context) error {
+	go func() {
+		c.BaseCollector.Start(ctx)
+	}()
+	for {
+		select {
+		case m, ok := <-c.BaseCollector.Ch:
+			if !ok {
+				return nil
+			}
+			_ = c.PushCtx(ctx, m)
+		}
 	}
+}
+
+func (c *ChanCollector) Close() error {
+	close(c.ch)
 	return nil
 }
 
@@ -68,11 +86,4 @@ func (c *ChanCollector) Pull(stop <-chan struct{}) (*models.IncomingMail, error)
 
 func (c *ChanCollector) PullCtx(ctx context.Context) (*models.IncomingMail, error) {
 	return c.Pull(ctx.Done())
-}
-
-
-func (c *ChanCollector) Close() error {
-	close(c.ch)
-	c.BaseCollector.Close()
-	return nil
 }

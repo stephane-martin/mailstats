@@ -360,6 +360,14 @@
 
 [[projects]]
   branch = "master"
+  digest = "1:ee0c1f58bce5135acd484811ba5e8e5b113a26674a3b25686aebcf1bbce1c4a9"
+  name = "github.com/google/renameio"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "8bac8552c40822a27a77e2b2a7d2788c4d590d04"
+
+[[projects]]
+  branch = "master"
   digest = "1:0ee2c8a10f5becd12ff78775014bb57d9673cec944cfda13fb1028539fd99890"
   name = "github.com/h2non/filetype"
   packages = [
@@ -801,6 +809,47 @@
   revision = "48954b6210f8d154cb5f8484d3a3e1f83489309e"
 
 [[projects]]
+  digest = "1:3c1a69cdae3501bf75e76d0d86dc6f2b0a7421bc205c0cb7b96b19eed464a34d"
+  name = "go.uber.org/atomic"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "1ea20fb1cbb1cc08cbd0d913a96dead89aa18289"
+  version = "v1.3.2"
+
+[[projects]]
+  digest = "1:dc4c7a12731af053987821f43f32970d78937b1bad49dbfb5911b6b1b88173a0"
+  name = "go.uber.org/dig"
+  packages = [
+    ".",
+    "internal/digreflect",
+    "internal/dot",
+  ]
+  pruneopts = "UT"
+  revision = "12c8adaa5e6a24ad02198588082d95582ee16e5b"
+  version = "v1.6.0"
+
+[[projects]]
+  digest = "1:5581d7a720d13381e69ea1e661c5f66b3cdbe6c71d38826982ee633c443c20c5"
+  name = "go.uber.org/fx"
+  packages = [
+    ".",
+    "internal/fxlog",
+    "internal/fxreflect",
+    "internal/lifecycle",
+  ]
+  pruneopts = "UT"
+  revision = "9c82e1daccdcbd27387a1f044bd3dc6d3f878bf4"
+  version = "v1.8.0"
+
+[[projects]]
+  digest = "1:60bf2a5e347af463c42ed31a493d817f8a72f102543060ed992754e689805d1a"
+  name = "go.uber.org/multierr"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "3c4937480c32f4c13a875a1829af76c98ca3d40a"
+  version = "v1.1.0"
+
+[[projects]]
   branch = "master"
   digest = "1:9bef1b74ae76b140542d5fbf465202f5e64462d9c8658c27bb31a150fff5a54c"
   name = "golang.org/x/crypto"
@@ -982,6 +1031,7 @@
     "github.com/go-redis/redis",
     "github.com/gojektech/heimdall",
     "github.com/gojektech/heimdall/httpclient",
+    "github.com/google/renameio",
     "github.com/h2non/filetype",
     "github.com/h2non/filetype/matchers",
     "github.com/h2non/filetype/types",
@@ -1009,6 +1059,7 @@
     "github.com/uber-go/atomic",
     "github.com/urfave/cli",
     "github.com/xi2/xz",
+    "go.uber.org/fx",
     "golang.org/x/crypto/nacl/secretbox",
     "golang.org/x/net/html",
     "golang.org/x/sync/errgroup",

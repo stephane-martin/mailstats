@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"github.com/Shopify/sarama"
 	"github.com/inconshreveable/log15"
 	"github.com/pkg/errors"
@@ -10,7 +11,7 @@ import (
 type KafkaConsumer struct {
 	client sarama.AsyncProducer
 	logger log15.Logger
-	topic string
+	topic  string
 }
 
 func NewKafkaConsumer(brokers []string, topic string, logger log15.Logger) (*KafkaConsumer, error) {
@@ -30,19 +31,39 @@ func NewKafkaConsumer(brokers []string, topic string, logger log15.Logger) (*Kaf
 	if err != nil {
 		return nil, err
 	}
-	go func() {
-		for range clt.Successes() {}
 
-		for err := range clt.Errors() {
-			props := err.Msg.Metadata.(map[string]string)
-			logger.Warn("Failed to deliver features to Kafka", "family", props["family"], "uid", props["uid"])
-		}
-	}()
 	return &KafkaConsumer{
 		client: clt,
 		logger: logger,
-		topic: topic,
+		topic:  topic,
 	}, nil
+}
+
+func (c *KafkaConsumer) Start(ctx context.Context) error {
+	succs := c.client.Successes()
+	errs := c.client.Errors()
+	done := ctx.Done()
+	for {
+		if succs == nil && errs == nil && done == nil {
+			return nil
+		}
+		select {
+		case _, ok := <-succs:
+			if !ok {
+				succs = nil
+			}
+		case err, ok := <-errs:
+			if !ok {
+				errs = nil
+			} else {
+				props := err.Msg.Metadata.(map[string]string)
+				c.logger.Warn("Failed to deliver features to Kafka", "family", props["family"], "uid", props["uid"])
+			}
+		case <-done:
+			c.client.AsyncClose()
+			done = nil
+		}
+	}
 }
 
 func (c *KafkaConsumer) Consume(features *models.FeaturesMail) error {
@@ -55,7 +76,7 @@ func (c *KafkaConsumer) Consume(features *models.FeaturesMail) error {
 		Key:   sarama.StringEncoder(features.Family),
 		Value: sarama.ByteEncoder(b),
 		Metadata: map[string]string{
-			"uid": features.UID,
+			"uid":    features.UID,
 			"family": features.Family,
 		},
 		Headers: []sarama.RecordHeader{
@@ -69,7 +90,6 @@ func (c *KafkaConsumer) Consume(features *models.FeaturesMail) error {
 	return nil
 }
 
-func (c *KafkaConsumer) Close() error {
-	c.client.AsyncClose()
-	return nil
+func (c *KafkaConsumer) Name() string {
+	return "KafkaConsumer"
 }
