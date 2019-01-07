@@ -72,3 +72,8 @@ func GetArgs(c *cli.Context) (*Args, error) {
 
 	return args, nil
 }
+
+
+func (args *Args) RedisRequired() bool {
+	return args.Consumer.GetType() == Redis || args.Collector.Type == "redis"
+}

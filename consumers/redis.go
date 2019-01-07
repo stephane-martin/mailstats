@@ -7,12 +7,8 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 )
 
-func NewRedisConsumer(args arguments.RedisArgs) (*RedisConsumer, error) {
-	client, err := utils.NewRedisClient(args)
-	if err != nil {
-		return nil, err
-	}
-	return &RedisConsumer{client: client, args: args}, nil
+func NewRedisConsumer(args arguments.RedisArgs, redis utils.RedisConn) (*RedisConsumer, error) {
+	return &RedisConsumer{client: redis.Client(), args: args}, nil
 }
 
 func (c *RedisConsumer) Name() string {
@@ -26,10 +22,6 @@ func (c *RedisConsumer) Consume(features *models.FeaturesMail) error {
 	}
 	_, err = c.client.RPush(c.args.ResultsKey, b).Result()
 	return err
-}
-
-func (c *RedisConsumer) Close() error {
-	return c.client.Close()
 }
 
 type RedisConsumer struct {

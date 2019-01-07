@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
@@ -140,7 +138,6 @@ var SMTPService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, backend
 })
 
 func SMTPAction(c *cli.Context) error {
-
 	args, err := arguments.GetArgs(c)
 	if err != nil {
 		err = fmt.Errorf("error validating cli arguments: %s", err)
@@ -148,47 +145,11 @@ func SMTPAction(c *cli.Context) error {
 	}
 
 	logger := logging.NewLogger(args)
-
-
-	// ordre d'arrêt: (smtp, http), (forwarder, collector), parser, consumer
-	// donc collector doit dépendre de parser
-	// et parser doit dépendre de consumer
-
-	// SMTP and HTTP services produce incoming messages and send them to the collector
-	// parser pulls messages from collector and sends them to consumer
-
-	// SMTP => collector, forwarder, parser
-	// HTTP => collector, forwarder, parser
-	// parser => collector, consumer
-	// collector
-	// forwarder
-	// consumer
-
-	// start order: (collector/consumer/forwarder), parser, (SMTP/HTTP)
-
-	app := fx.New(
-		forwarders.ForwarderService,
-		consumers.ConsumerService,
-		collectors.CollectorService,
-		parser.Service,
-		extractors.ExifToolService,
-		HTTPService,
-		HTTPMasterService,
-		SMTPService,
-		utils.GeoIPService,
-
-		fx.Provide(
-			func() *cli.Context { return c },
-			func() *arguments.Args { return args },
-			func() log15.Logger { return logger },
-			NewSMTPBackend,
-		),
-		fx.Logger(logging.PrintfLogger{Logger: logger}),
-		fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *SMTPServer) {
-			// bootstrap the application
-		}),
-	)
-
+	withRedis := args.RedisRequired()
+	invoke := fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *SMTPServer) {
+		// bootstrap the application
+	})
+	app := Builder(c, args, invoke, withRedis, logger)
 	app.Run()
 	return nil
 
@@ -210,16 +171,6 @@ func SMTPAction(c *cli.Context) error {
 			return err
 		})
 		return g.Wait()
-	}
-	*/
-
-	/*
-	if args.Secret != nil {
-		g.Go(func() error {
-			err := StartMaster(ctx, args.HTTP, args.Secret, collector, consumer, logger)
-			logger.Debug("StartMaster has returned", "error", err)
-			return err
-		})
 	}
 	*/
 

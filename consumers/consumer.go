@@ -14,8 +14,19 @@ type Consumer interface {
 	Consume(features *models.FeaturesMail) error
 }
 
-func NewConsumer(args *arguments.Args, logger log15.Logger) (Consumer, error) {
-	switch args.Consumer.GetType() {
+type ConsumerParams struct {
+	fx.In
+	Args   *arguments.Args
+	Logger log15.Logger    `optional:"true"`
+	Redis  utils.RedisConn `optional:"true"`
+}
+
+func NewConsumer(args *arguments.Args, redis utils.RedisConn, logger log15.Logger) (Consumer, error) {
+	typ := args.Consumer.GetType()
+	if typ == arguments.Redis && redis == nil {
+		return nil, errors.New("Redis consumer required, but not Redis connection provided")
+	}
+	switch typ {
 	case arguments.Stdout:
 		return StdoutConsumer, nil
 	case arguments.Stderr:
@@ -23,7 +34,7 @@ func NewConsumer(args *arguments.Args, logger log15.Logger) (Consumer, error) {
 	case arguments.File:
 		return NewFileConsumer(args.Consumer)
 	case arguments.Redis:
-		return NewRedisConsumer(args.Redis)
+		return NewRedisConsumer(args.Redis, redis)
 	case arguments.HTTP:
 		return NewHTTPConsumer(args.Consumer)
 	case arguments.Rabbit:
@@ -37,8 +48,13 @@ func NewConsumer(args *arguments.Args, logger log15.Logger) (Consumer, error) {
 	}
 }
 
-var ConsumerService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (Consumer, error) {
-	c, err := NewConsumer(args, logger)
+var ConsumerService = fx.Provide(func(lc fx.Lifecycle, params ConsumerParams) (Consumer, error) {
+	logger := params.Logger
+	if logger == nil {
+		logger = log15.New()
+		logger.SetHandler(log15.DiscardHandler())
+	}
+	c, err := NewConsumer(params.Args, params.Redis, logger)
 	if err != nil {
 		return nil, err
 	}

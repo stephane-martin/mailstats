@@ -31,15 +31,25 @@ func CollectAndForward(done <-chan struct{}, incoming *models.IncomingMail, c Co
 	return nil
 }
 
-func NewCollector(args *arguments.Args, logger log15.Logger) (Collector, error) {
-	logger.Debug("Collector", "type", args.Collector.Collector)
-	switch args.Collector.Collector {
+type CollectorParams struct {
+	fx.In
+	Args   *arguments.Args
+	Logger log15.Logger    `optional:"true"`
+	Redis  utils.RedisConn `optional:"true"`
+}
+
+func NewCollector(args *arguments.Args, redis utils.RedisConn, logger log15.Logger) (Collector, error) {
+	if args.Collector.Type == "redis" && redis == nil {
+		return nil, errors.New("redis Collector required, but not Redis connection provided")
+	}
+	logger.Debug("Collector", "type", args.Collector.Type)
+	switch args.Collector.Type {
 	case "channel":
 		return NewChanCollector(args.Collector.CollectorSize, logger)
 	case "filesystem":
 		return NewFSCollector(args.Collector.CollectorDir, logger)
 	case "redis":
-		return NewRedisCollector(args.Redis, logger)
+		return NewRedisCollector(args.Redis, redis, logger)
 	case "rabbitmq":
 		return NewRabbitCollector(args.Rabbit, logger)
 	default:
@@ -47,13 +57,16 @@ func NewCollector(args *arguments.Args, logger log15.Logger) (Collector, error) 
 	}
 }
 
-var CollectorService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (Collector, error) {
-	c, err := NewCollector(args, logger)
+var CollectorService = fx.Provide(func(lc fx.Lifecycle, params CollectorParams) (Collector, error) {
+	logger := params.Logger
+	if logger == nil {
+		logger = log15.New()
+		logger.SetHandler(log15.DiscardHandler())
+	}
+	c, err := NewCollector(params.Args, params.Redis, logger)
 	if err != nil {
 		return nil, err
 	}
-	if lc != nil {
-		utils.Append(lc, c, logger)
-	}
+	utils.Append(lc, c, logger)
 	return c, nil
 })

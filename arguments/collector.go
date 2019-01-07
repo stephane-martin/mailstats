@@ -7,7 +7,7 @@ import (
 )
 
 type CollectorArgs struct {
-	Collector     string
+	Type          string
 	CollectorSize int
 	CollectorDir  string
 }
@@ -21,15 +21,15 @@ var collectorsMap = map[string]struct{}{
 
 func (args *CollectorArgs) Verify() error {
 	v := verifier.New()
-	_, ok := collectorsMap[args.Collector]
+	_, ok := collectorsMap[args.Type]
 	v.That(ok, "Unknown collector type")
 	return v.GetError()
 }
 
 func (args *CollectorArgs) Populate(c *cli.Context) {
-	args.Collector = strings.ToLower(c.GlobalString("collector"))
-	if args.Collector == "" {
-		args.Collector = "channel"
+	args.Type = strings.ToLower(c.GlobalString("collector"))
+	if args.Type == "" {
+		args.Type = "channel"
 	}
 
 	args.CollectorDir = c.GlobalString("collector-dir")

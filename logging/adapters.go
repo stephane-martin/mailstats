@@ -36,7 +36,13 @@ func (l PrintfLogger) Printf(format string, v ...interface{}) {
 		if len(parts) == 1 {
 			l.Logger.Info(msg)
 		} else {
-			l.Logger.Debug("Dependency injection", "action", strings.TrimSpace(parts[0]), "details", strings.TrimSpace(parts[1]))
+			action := strings.TrimSpace(parts[0])
+			details := strings.TrimSpace(parts[1])
+			if strings.ToLower(action) == "error" {
+				l.Logger.Error("Dependency error", "details", details)
+			} else {
+				l.Logger.Debug("Dependency injection", "action", action, "details", details)
+			}
 		}
 	} else {
 		l.Logger.Info(msg)

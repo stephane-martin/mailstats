@@ -13,12 +13,9 @@ import (
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
-	"github.com/stephane-martin/mailstats/parser"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"go.uber.org/fx"
@@ -39,18 +36,18 @@ func init() {
 }
 
 type IMAPMonitor struct {
-	URI string
-	clt *client.Client
-	u *url.URL
-	login string
-	password string
-	logger log15.Logger
-	updates chan client.Update
+	URI          string
+	clt          *client.Client
+	u            *url.URL
+	login        string
+	password     string
+	logger       log15.Logger
+	updates      chan client.Update
 	imapMessages chan *imap.Message
-	collector collectors.Collector
-	forwarder forwarders.Forwarder
-	host string
-	port int
+	collector    collectors.Collector
+	forwarder    forwarders.Forwarder
+	host         string
+	port         int
 }
 
 var IMAPMonitorService = fx.Provide(func(lc fx.Lifecycle, c *cli.Context, collector collectors.Collector, forwarder forwarders.Forwarder, logger log15.Logger) (*IMAPMonitor, error) {
@@ -93,18 +90,20 @@ func NewIMAPMonitor(c *cli.Context, collector collectors.Collector, forwarder fo
 		return nil, errors.New("specify username and password")
 	}
 
+	logger.Info("Monitoring IMAP mailbox", "host", host, "port", port)
+
 	return &IMAPMonitor{
-		URI: uri,
-		u: u,
-		login: username,
-		password: password,
-		logger: logger,
-		updates: make(chan client.Update, 256),
+		URI:          uri,
+		u:            u,
+		login:        username,
+		password:     password,
+		logger:       logger,
+		updates:      make(chan client.Update, 256),
 		imapMessages: make(chan *imap.Message),
-		collector: collector,
-		forwarder: forwarder,
-		host: host,
-		port: int(port),
+		collector:    collector,
+		forwarder:    forwarder,
+		host:         host,
+		port:         int(port),
 	}, nil
 }
 
@@ -191,7 +190,6 @@ func (m *IMAPMonitor) Start(ctx context.Context) error {
 	return g.Wait()
 }
 
-
 func (m *IMAPMonitor) fetch(ctx context.Context, stopIdle chan struct{}) error {
 	defer close(m.imapMessages)
 
@@ -206,7 +204,6 @@ func (m *IMAPMonitor) fetch(ctx context.Context, stopIdle chan struct{}) error {
 	m.logger.Info("Max UID of messages stored in box", "max", max)
 
 	section := &imap.BodySectionName{}
-
 
 	for {
 		var uids []uint32
@@ -334,18 +331,6 @@ func (m *IMAPMonitor) reactUpdates(ctx context.Context, stopIdle chan struct{}) 
 }
 
 func IMAPMonitorAction(c *cli.Context) error {
-
-
-	/*
-	if args.Secret != nil {
-		g.Go(func() error {
-			err := StartMaster(ctx, args.HTTP, args.Secret, collector, consumer, logger)
-			logger.Debug("StartMaster has returned", "error", err)
-			return err
-		})
-	}
-	*/
-
 	args, err := arguments.GetArgs(c)
 	if err != nil {
 		err = fmt.Errorf("error validating cli arguments: %s", err)
@@ -353,28 +338,11 @@ func IMAPMonitorAction(c *cli.Context) error {
 	}
 
 	logger := logging.NewLogger(args)
-
-	app := fx.New(
-		forwarders.ForwarderService,
-		consumers.ConsumerService,
-		collectors.CollectorService,
-		parser.Service,
-		extractors.ExifToolService,
-		HTTPService,
-		IMAPMonitorService,
-		utils.GeoIPService,
-
-		fx.Provide(
-			func() *cli.Context { return c },
-			func() *arguments.Args { return args },
-			func() log15.Logger { return logger },
-		),
-		fx.Logger(logging.PrintfLogger{Logger: logger}),
-		fx.Invoke(func(h HTTPServer, s *IMAPMonitor) {
-			// bootstrap the application
-		}),
-	)
-
+	withRedis := args.RedisRequired()
+	invoke := fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *IMAPMonitor) {
+		// bootstrap the application
+	})
+	app := Builder(c, args, invoke, withRedis, logger)
 	app.Run()
 	return nil
 }
@@ -395,5 +363,6 @@ func getNewUIDs(clt *client.Client, previousUID uint32) ([]uint32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed list messages UIDs: %s", err.Error())
 	}
+	linq.From(uids).SortT(func(i, j uint32) bool {return i < j}).ToSlice(&uids)
 	return uids, nil
 }

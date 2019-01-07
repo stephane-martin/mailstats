@@ -7,8 +7,6 @@ import (
 	"github.com/inconshreveable/log15"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/collectors"
-	"github.com/stephane-martin/mailstats/consumers"
-	"github.com/stephane-martin/mailstats/extractors"
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/models"
@@ -198,31 +196,13 @@ func MilterAction(c *cli.Context) error {
 		err = fmt.Errorf("error validating cli arguments: %s", err)
 		return cli.NewExitError(err.Error(), 1)
 	}
+
 	logger := logging.NewLogger(args)
-
-	app := fx.New(
-		forwarders.ForwarderService,
-		consumers.ConsumerService,
-		collectors.CollectorService,
-		parser.Service,
-		extractors.ExifToolService,
-		HTTPService,
-		MilterService,
-		utils.GeoIPService,
-
-		fx.Provide(
-			func() *cli.Context { return c },
-			func() *arguments.Args { return args },
-			func() log15.Logger { return logger },
-		),
-
-		fx.Logger(logging.PrintfLogger{Logger: logger}),
-		fx.Invoke(func(h HTTPServer, s *MilterServer) {
-			// bootstrap the application
-		}),
-	)
-
+	withRedis := args.RedisRequired()
+	invoke := fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *MilterServer) {
+		// bootstrap the application
+	})
+	app := Builder(c, args, invoke, withRedis, logger)
 	app.Run()
 	return nil
-
 }
