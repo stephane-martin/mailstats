@@ -93,7 +93,6 @@ type SMTPServer struct {
 	*smtp.Server
 	listener net.Listener
 	logger log15.Logger
-	addr string
 }
 
 func (s *SMTPServer) Name() string { return "SMTPServer" }
@@ -109,7 +108,7 @@ func (s *SMTPServer) Prestart() error {
 
 
 func (s *SMTPServer) Start(ctx context.Context) error {
-	s.logger.Debug("Start SMTP service")
+	s.logger.Info("Start SMTP service", "listening", s.Addr)
 	go func() {
 		<-ctx.Done()
 		s.Server.Close()
@@ -124,9 +123,9 @@ func NewSMTPService(args *arguments.Args, backend smtp.Backend, logger log15.Log
 	s.MaxMessageBytes = args.SMTP.MaxMessageSize
 	s.MaxRecipients = 0
 	s.AllowInsecureAuth = true
+	s.Addr = net.JoinHostPort(args.SMTP.ListenAddr, fmt.Sprintf("%d", args.SMTP.ListenPort))
 	return &SMTPServer{
 		Server: s,
-		addr: net.JoinHostPort(args.SMTP.ListenAddr, fmt.Sprintf("%d", args.SMTP.ListenPort)),
 		logger: logger,
 	}
 }
