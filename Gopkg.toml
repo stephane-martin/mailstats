@@ -206,6 +206,10 @@
 	name = "github.com/deckarep/golang-set"
 	version = "1.7.1"
 
+[[constraint]]
+    name = "github.com/emersion/go-dkim"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

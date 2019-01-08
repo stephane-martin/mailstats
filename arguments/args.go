@@ -24,6 +24,7 @@ type Args struct {
 	Elasticsearch ElasticsearchArgs
 	Secret        *memguard.LockedBuffer `json:"-"`
 	NbParsers     int
+	NoDKIM        bool
 }
 
 type argsI interface {
@@ -69,10 +70,10 @@ func GetArgs(c *cli.Context) (*Args, error) {
 	if args.NbParsers == -1 {
 		args.NbParsers = runtime.NumCPU()
 	}
+	args.NoDKIM = c.GlobalBool("no-dkim")
 
 	return args, nil
 }
-
 
 func (args *Args) RedisRequired() bool {
 	return args.Consumer.GetType() == Redis || args.Collector.Type == "redis"

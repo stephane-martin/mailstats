@@ -192,6 +192,11 @@ func MakeApp() *cli.App {
 			Value: "mailstats",
 			EnvVar: "MAILSTATS_ELASTICSEARCH_INDEX_NAME",
 		},
+		cli.BoolFlag{
+			Name: "no-dkim",
+			Usage: "Do not perform DKIM validation",
+			EnvVar: "MAILSTATS_NO_DKIM",
+		},
 
 	}
 	app.Version = Version

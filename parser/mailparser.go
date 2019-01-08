@@ -26,6 +26,7 @@ import (
 	"github.com/stephane-martin/mailstats/utils"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/emersion/go-dkim"
 	"github.com/inconshreveable/log15"
 	"github.com/mvdan/xurls"
 )
@@ -37,7 +38,7 @@ type Parser interface {
 	ParseMany(context.Context, <-chan *models.IncomingMail, chan<- *models.FeaturesMail)
 }
 
-func NewParser(nbWorkers int, collector collectors.Collector, consumer consumers.Consumer, geoip utils.GeoIP, tool extractors.ExifTool, logger log15.Logger) Parser {
+func NewParser(nbWorkers int, nodkim bool, collector collectors.Collector, consumer consumers.Consumer, geoip utils.GeoIP, tool extractors.ExifTool, logger log15.Logger) Parser {
 	parser := impl{
 		logger:    logger,
 		collector: collector,
@@ -45,6 +46,7 @@ func NewParser(nbWorkers int, collector collectors.Collector, consumer consumers
 		nbWorkers: nbWorkers,
 		tool:      tool,
 		geoip:     geoip,
+		noDKIM:    nodkim,
 	}
 
 	return &parser
@@ -70,7 +72,7 @@ var Service = fx.Provide(func(lc fx.Lifecycle, params Params) Parser {
 		logger = log15.New()
 		logger.SetHandler(log15.DiscardHandler())
 	}
-	p := NewParser(nbWorkers, params.Collector, params.Consumer, params.GeoIP, params.Tool, logger)
+	p := NewParser(nbWorkers, params.Args.NoDKIM, params.Collector, params.Consumer, params.GeoIP, params.Tool, logger)
 	utils.Append(lc, p, logger)
 	return p
 })
@@ -82,6 +84,7 @@ type impl struct {
 	consumer  consumers.Consumer
 	nbWorkers int
 	geoip     utils.GeoIP
+	noDKIM    bool
 }
 
 func (p *impl) Name() string { return "Parser" }
@@ -291,6 +294,34 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 			features.Received = append(features.Received, extractors.ParseReceivedHeader(h, p.geoip, p.logger))
 		}
 		delete(features.Headers, "received")
+	}
+
+	if len(features.Headers["dkim-signature"]) > 0 && !p.noDKIM {
+		r := bytes.NewReader(i.Data)
+		v, err := dkim.Verify(r)
+		if err != nil {
+			p.logger.Warn("Error trying to validate DKIM signature", "error", err)
+		} else {
+			var err error
+			var verifications []models.DKIMVerification
+			for _, verif := range v {
+				if verif.Err != nil {
+					err = verif.Err
+					break
+				}
+				verifications = append(verifications, models.DKIMVerification{
+					Domain:     verif.Domain,
+					Identifier: verif.Identifier,
+				})
+			}
+			if err != nil {
+				features.DKIM = &models.DKIMValidation{Error: err.Error()}
+			} else {
+				features.DKIM = &models.DKIMValidation{
+					Verifications: verifications,
+				}
+			}
+		}
 	}
 
 	return features, nil

@@ -21,12 +21,13 @@ type FeaturesMail struct {
 	TimeHeader  string              `json:"time_header,omitempty"`
 	Received    []ReceivedElement   `json:"received,omitempty"`
 	// TODO: check that From is consistent/scam
-	From   Address   `json:"from,omitempty"`
-	To     []Address `json:"to,omitempty" yaml:",flow"`
-	Title  string    `json:"title,omitempty"`
-	Emails []string  `json:"emails,omitempty"`
-	Urls   []string  `json:"urls,omitempty"`
-	Images []string  `json:"images,omitempty"`
+	From   Address         `json:"from,omitempty"`
+	To     []Address       `json:"to,omitempty" yaml:",flow"`
+	Title  string          `json:"title,omitempty"`
+	Emails []string        `json:"emails,omitempty"`
+	Urls   []string        `json:"urls,omitempty"`
+	Images []string        `json:"images,omitempty"`
+	DKIM   *DKIMValidation `json:"dkim,omitemptyœ"`
 }
 
 func (f *FeaturesMail) Encode(indent bool) ([]byte, error) {
@@ -35,6 +36,16 @@ func (f *FeaturesMail) Encode(indent bool) ([]byte, error) {
 	} else {
 		return json.Marshal(f)
 	}
+}
+
+type DKIMValidation struct {
+	Error         string             `json:"error,omitempty"`
+	Verifications []DKIMVerification `json:"verifications,omitempty"`
+}
+
+type DKIMVerification struct {
+	Domain     string `json:"domain,omitempty"`
+	Identifier string `json:"identifier,omitempty"`
 }
 
 type ReceivedElement struct {

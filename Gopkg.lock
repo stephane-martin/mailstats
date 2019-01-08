@@ -186,6 +186,14 @@
   version = "v1.1.0"
 
 [[projects]]
+  branch = "master"
+  digest = "1:a4ab45bd16a76fcb6f801ad4d5447b5c5ea9a6eb7425b07bcaf153770f82b9ba"
+  name = "github.com/emersion/go-dkim"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "18000c30d4b853b81e12a581dd3e1c9173e1c463"
+
+[[projects]]
   branch = "v1"
   digest = "1:9d70c708f7aa76564b27d1073fe1c213ce4790d083892e84783f481c93bd1764"
   name = "github.com/emersion/go-imap"
@@ -1017,6 +1025,7 @@
     "github.com/chrisport/go-lang-detector/langdet",
     "github.com/chrisport/go-lang-detector/langdet/langdetdef",
     "github.com/deckarep/golang-set",
+    "github.com/emersion/go-dkim",
     "github.com/emersion/go-imap",
     "github.com/emersion/go-imap-compress",
     "github.com/emersion/go-imap-idle",
