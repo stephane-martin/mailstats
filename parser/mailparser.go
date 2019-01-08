@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/ahmetb/go-linq"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/metrics"
 	"go.uber.org/fx"
@@ -236,8 +237,8 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 	}
 	features.Urls = distinct(urls)
 
-	emails := emailRE.FindAllString(plain, -1)
-	emails = append(emails, emailRE.FindAllString(ahtml, -1)...)
+	emails := findEmailAddresses(plain)
+	emails = append(emails, findEmailAddresses(ahtml)...)
 	features.Emails = distinct(emails)
 
 	features.Images = distinct(images)
@@ -266,21 +267,37 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 
 	if len(features.Headers["from"]) > 0 {
 		addr := features.Headers["from"][0]
-		paddr, err := mail.ParseAddress(addr)
+		paddr, err := ParseAddress(addr)
+		features.From = new(models.FromAddress)
 		if err == nil {
-			features.From = models.Address(*paddr)
+			addrInName, multiple, different, spoofed := nameContainsAddress(paddr)
+			features.From.Address.Name = paddr.Name
+			features.From.Address.Address = paddr.Address
+			features.From.NameContainsAddress = addrInName
+			features.From.Multiple = multiple
+			features.From.Different = different
+			features.From.Spoofed = spoofed
+		} else {
+			features.From.Address.Address = addr
+			features.From.Error = err.Error()
 		}
 		delete(features.Headers, "from")
+
 	}
 
 	if len(features.Headers["to"]) > 0 {
-		pAddrs, err := mail.ParseAddressList(features.Headers["to"][0])
+		pAddrs, err := ParseAddressList(features.Headers["to"][0])
 		if err == nil {
 			for _, pAddr := range pAddrs {
-				features.To = append(features.To, models.Address(*pAddr))
+				features.To = append(features.To, models.Address{
+					Name:                pAddr.Name,
+					Address:             pAddr.Address,
+				})
 			}
+			delete(features.Headers, "to")
+		} else {
+			p.logger.Info("Error parsing the address list from the To: header", "error", err)
 		}
-		delete(features.Headers, "to")
 	}
 
 	if len(features.Headers["subject"]) > 0 {
@@ -327,7 +344,66 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 	return features, nil
 }
 
+func nameContainsAddress(fullAddr *mail.Address) (bool, bool, bool, bool) {
+	if fullAddr == nil {
+		return false, false, false, false
+	}
+	name := strings.TrimSpace(fullAddr.Name)
+	if name == "" {
+		return false, false, false, false
+	}
+	addr := strings.TrimSpace(fullAddr.Address)
+	if addr == "" {
+		return false, false, false, false
+	}
+	addrDomain := getDomainFromAddress(addr)
+	if addrDomain == "" {
+		return false, false, false, false
+	}
+	addrsInName := findEmailAddresses(name)
+	if len(addrsInName) == 0 {
+		return false, false, false, false
+	}
+	totalAddressLength := int(0)
+	nonAlphaChars := len(alphaChars.ReplaceAllString(name, ""))
+	for _, addr := range addrsInName {
+		nonAlphaChars -= len(alphaChars.ReplaceAllString(addr, ""))
+		totalAddressLength += len(addr)
+	}
+	if (len(name) - totalAddressLength) > (5 - nonAlphaChars) {
+		return false, false, false, false
+	}
+	linq.From(addrsInName).WhereT(func(a string) bool {
+		return getDomainFromAddress(a) != ""
+	}).ToSlice(&addrsInName)
+
+	if len(addrsInName) == 0 {
+		return false, false, false, false
+	}
+	if len(addrsInName) > 1 {
+		// name contains multiple addresses
+		return true, true, false, false
+	}
+	addrInName := addrsInName[0]
+	differentAddress := addr != addrInName
+	spoofed := addrDomain != getDomainFromAddress(addrInName)
+	return true, false, differentAddress, spoofed
+}
+
+func getDomainFromAddress(addr string) string {
+	u, err := url.Parse("mailto://"+addr)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
 var emailRE = regexp.MustCompile(`(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b`)
+var alphaChars = regexp.MustCompile(`[A-Za-z0-9]`)
+
+func findEmailAddresses(s string) []string {
+	return emailRE.FindAllString(s, -1)
+}
 
 func distinct(set []string) []string {
 	m := make(map[string]bool)
@@ -374,7 +450,7 @@ func ParsePart(part io.Reader, tool extractors.ExifTool, logger log15.Logger) (s
 	ctHeader := strings.TrimSpace(msg.Header.Get("Content-Type"))
 	if len(ctHeader) == 0 {
 		logger.Info("No Content-Type header, assume text/plain in UTF-8")
-		ctHeader = "Content-Type: text/plain; charset=UTF-8"
+		ctHeader = "text/plain; charset=UTF-8"
 	}
 	contentType, params, err := mime.ParseMediaType(ctHeader)
 	if err != nil {

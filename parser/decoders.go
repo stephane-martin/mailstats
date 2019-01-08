@@ -10,8 +10,13 @@ import (
 	"io/ioutil"
 	"mime"
 	"mime/quotedprintable"
+	"net/mail"
 	"strings"
 )
+
+func getMimeDecoder() *mime.WordDecoder {
+	return &mime.WordDecoder{CharsetReader: charset.Reader}
+}
 
 // WordDecode decodes word if necessary and returns decoded data
 func WordDecode(word string) (string, error) {
@@ -19,10 +24,19 @@ func WordDecode(word string) (string, error) {
 	if !strings.HasPrefix(word, "=?") || !strings.HasSuffix(word, "?=") || strings.Count(word, "?") != 4 {
 		return word, nil
 	}
-	decoder := new(mime.WordDecoder)
-	decoder.CharsetReader = charset.Reader
-	return decoder.Decode(word)
+	return getMimeDecoder().Decode(word)
 }
+
+func ParseAddress(addr string) (*mail.Address, error) {
+	p := &mail.AddressParser{WordDecoder: getMimeDecoder()}
+	return p.Parse(addr)
+}
+
+func ParseAddressList(addrs string) ([]*mail.Address, error) {
+	p := &mail.AddressParser{WordDecoder: getMimeDecoder()}
+	return p.ParseList(addrs)
+}
+
 
 // StringDecode splits text to list of words, decodes
 // every word and assembles it back into a decoded string

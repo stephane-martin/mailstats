@@ -21,13 +21,13 @@ type FeaturesMail struct {
 	TimeHeader  string              `json:"time_header,omitempty"`
 	Received    []ReceivedElement   `json:"received,omitempty"`
 	// TODO: check that From is consistent/scam
-	From   Address         `json:"from,omitempty"`
+	From   *FromAddress    `json:"from,omitempty"`
 	To     []Address       `json:"to,omitempty" yaml:",flow"`
 	Title  string          `json:"title,omitempty"`
 	Emails []string        `json:"emails,omitempty"`
 	Urls   []string        `json:"urls,omitempty"`
 	Images []string        `json:"images,omitempty"`
-	DKIM   *DKIMValidation `json:"dkim,omitemptyœ"`
+	DKIM   *DKIMValidation `json:"dkim,omitempty"`
 }
 
 func (f *FeaturesMail) Encode(indent bool) ([]byte, error) {
@@ -112,6 +112,15 @@ type Attachment struct {
 type Address struct {
 	Name    string `json:"name,omitempty"`
 	Address string `json:"address,omitempty"`
+}
+
+type FromAddress struct {
+	Address
+	Error               string `json:"error,omitempty"`
+	NameContainsAddress bool   `json:"name_contains_address"`
+	Multiple            bool   `json:"multiple"`
+	Different           bool   `json:"different"`
+	Spoofed             bool   `json:"spoofed"`
 }
 
 type Event struct {
