@@ -1,12 +1,14 @@
 package extractors
 
 import (
-	"github.com/stephane-martin/mailstats/utils"
 	"strings"
+
+	set "github.com/deckarep/golang-set"
+	"github.com/stephane-martin/mailstats/utils"
 )
 
-var StopWordsEnglish map[string]struct{}
-var StopWordsFrench map[string]struct{}
+var StopWordsEnglish = set.NewSet()
+var StopWordsFrench = set.NewSet()
 
 func init() {
 	enB, err := Asset("data/stopwords-en.txt")
@@ -17,18 +19,16 @@ func init() {
 	if err != nil {
 		panic(err)
 	}
-	StopWordsEnglish = make(map[string]struct{})
-	StopWordsFrench = make(map[string]struct{})
 	for _, word := range strings.Split(string(enB), "\n") {
 		word = strings.ToLower(strings.TrimSpace(word))
 		if len(word) > 0 {
-			StopWordsEnglish[utils.Normalize(word)] = struct{}{}
+			StopWordsEnglish.Add(utils.Normalize(word))
 		}
 	}
 	for _, word := range strings.Split(string(enF), "\n") {
 		word = strings.ToLower(strings.TrimSpace(word))
 		if len(word) > 0 {
-			StopWordsFrench[utils.Normalize(word)] = struct{}{}
+			StopWordsFrench.Add(utils.Normalize(word))
 		}
 	}
 }

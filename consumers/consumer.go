@@ -18,13 +18,13 @@ type ConsumerParams struct {
 	fx.In
 	Args   *arguments.Args
 	Logger log15.Logger    `optional:"true"`
-	Redis  utils.RedisConn `optional:"true"`
+	Redis  utils.RedisConn `name:"consumer" optional:"true"`
 }
 
 func NewConsumer(args *arguments.Args, redis utils.RedisConn, logger log15.Logger) (Consumer, error) {
 	typ := args.Consumer.GetType()
 	if typ == arguments.Redis && redis == nil {
-		return nil, errors.New("Redis consumer required, but not Redis connection provided")
+		return nil, errors.New("redis consumer required, but not redis connection provided")
 	}
 	switch typ {
 	case arguments.Stdout:

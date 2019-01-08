@@ -46,6 +46,7 @@ retool:
 .tools_sync: retool tools.json
 	./retool sync
 	touch .tools_sync
+	
 
 extractors/bindata.go: .tools_sync ${DATAFILES}
 	./retool do go-bindata -pkg extractors -o extractors/bindata.go data/

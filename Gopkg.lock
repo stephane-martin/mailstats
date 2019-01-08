@@ -1016,6 +1016,7 @@
     "github.com/blabber/mbox",
     "github.com/chrisport/go-lang-detector/langdet",
     "github.com/chrisport/go-lang-detector/langdet/langdetdef",
+    "github.com/deckarep/golang-set",
     "github.com/emersion/go-imap",
     "github.com/emersion/go-imap-compress",
     "github.com/emersion/go-imap-idle",

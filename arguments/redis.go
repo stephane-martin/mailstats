@@ -43,5 +43,8 @@ func (args *RedisArgs) Populate(c *cli.Context) {
 	if args.CollectorKey == "" {
 		args.CollectorKey = "mailstats.collector"
 	}
+	if args.ResultsKey == "" {
+		args.ResultsKey = "mailstats.results"
+	}
 }
 

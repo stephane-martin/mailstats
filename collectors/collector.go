@@ -35,7 +35,7 @@ type CollectorParams struct {
 	fx.In
 	Args   *arguments.Args
 	Logger log15.Logger    `optional:"true"`
-	Redis  utils.RedisConn `optional:"true"`
+	Redis  utils.RedisConn `name:"collector" optional:"true"`
 }
 
 func NewCollector(args *arguments.Args, redis utils.RedisConn, logger log15.Logger) (Collector, error) {

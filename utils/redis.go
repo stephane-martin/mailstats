@@ -10,6 +10,11 @@ import (
 	"strings"
 )
 
+type RedisResult struct {
+	fx.Out
+	Collector RedisConn `name:"collector"`
+	Consumer  RedisConn `name:"consumer"`
+}
 
 type RedisConn interface {
 	Service
@@ -18,13 +23,29 @@ type RedisConn interface {
 	Client() *redis.Client
 }
 
-var RedisService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (RedisConn, error) {
-	c, err := NewRedisClient(args.Redis.URL)
-	if err != nil {
-		return nil, err
+var RedisService = fx.Provide(func(lc fx.Lifecycle, args *arguments.Args, logger log15.Logger) (RedisResult, error) {
+	var collector, consumer RedisConn
+	var err error
+
+	if args.Collector.Type == "redis" {
+		collector, err = NewRedisClient(args.Redis.URL)
+		if err != nil {
+			return RedisResult{}, err
+		}
 	}
-	Append(lc, c, logger)
-	return c, nil
+	if args.Consumer.GetType() == arguments.Redis {
+		consumer, err = NewRedisClient(args.Redis.URL)
+		if err != nil {
+			return RedisResult{}, err
+		}
+	}
+
+	Append(lc, collector, logger)
+	Append(lc, consumer, logger)
+	return RedisResult{
+		Collector: collector,
+		Consumer: consumer,
+	}, nil
 })
 
 type redisConnImpl struct {
@@ -68,8 +89,8 @@ func NewRedisClient(uri string) (RedisConn, error) {
 	dbnum, _ := strconv.ParseInt(db, 10, 32)
 	options := &redis.Options{
 		Network: "tcp",
-		Addr: u.Host,
-		DB: int(dbnum),
+		Addr:    u.Host,
+		DB:      int(dbnum),
 	}
 	password := strings.TrimSpace(params.Get("password"))
 	if password != "" {
@@ -79,5 +100,3 @@ func NewRedisClient(uri string) (RedisConn, error) {
 	client := redis.NewClient(options)
 	return &redisConnImpl{client: client}, nil
 }
-
-

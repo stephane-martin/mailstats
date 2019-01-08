@@ -1,11 +1,12 @@
 package extractors
 
 import (
+	"strings"
+	"unicode/utf8"
+
 	"github.com/jdkato/prose"
 	"github.com/kljensen/snowball"
 	"github.com/stephane-martin/mailstats/utils"
-	"strings"
-	"unicode/utf8"
 )
 
 func ExtractWords(text string) (words []string) {
@@ -61,13 +62,13 @@ func BagOfWords(text string, language string) map[string]int {
 	switch language {
 	case "english":
 		for word := range bag {
-			if _, ok := StopWordsEnglish[word]; ok {
+			if StopWordsEnglish.Contains(word) {
 				delete(bag, word)
 			}
 		}
 	case "french":
 		for word := range bag {
-			if _, ok := StopWordsFrench[word]; ok {
+			if StopWordsFrench.Contains(word) {
 				delete(bag, word)
 			}
 		}

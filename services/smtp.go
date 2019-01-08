@@ -145,11 +145,10 @@ func SMTPAction(c *cli.Context) error {
 	}
 
 	logger := logging.NewLogger(args)
-	withRedis := args.RedisRequired()
 	invoke := fx.Invoke(func(h *HTTPServer, m *HTTPMasterServer, s *SMTPServer) {
 		// bootstrap the application
 	})
-	app := Builder(c, args, invoke, withRedis, logger)
+	app := Builder(c, args, invoke, logger)
 	app.Run()
 	return nil
 

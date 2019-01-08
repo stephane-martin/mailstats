@@ -2,16 +2,18 @@ package extractors
 
 import (
 	"fmt"
-	"github.com/DavidBelicza/TextRank"
-	"github.com/DavidBelicza/TextRank/rank"
-	"github.com/stephane-martin/mailstats/utils"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/DavidBelicza/TextRank"
+	"github.com/DavidBelicza/TextRank/rank"
+	set "github.com/deckarep/golang-set"
+	"github.com/stephane-martin/mailstats/utils"
 )
 
 type lang struct {
 	stopWords func(string) bool
-	stems map[string]string
+	stems     map[string]string
 }
 
 func (l *lang) IsStopWord(word string) bool {
@@ -38,34 +40,26 @@ func (l *lang) SetWords(code string, words []string) {
 
 }
 
-var wordSeparators = []rune{
-	'*', '«', '»', '+', '/', ':', '-', '_', '?', '!', '.', '”', '“', ' ', ',', '\'', '’', '"', ')', '(', '[', ']', '{', '}', '"', ';', '\n', '>', '<', '%', '@', '&', '=', '#',
-}
-var wordsSeparatorsMap map[rune]struct{}
+var wordSeparators = set.NewSetWith(
+	'*', '«', '»', '+', '/', ':', '-', '_', '?', '!', '.', '”', '“', ' ', ',',
+	'\'', '’', '"', ')', '(', '[', ']', '{', '}', '"', ';', '\n', '>', '<',
+	'%', '@', '&', '=', '#',
+)
 
-var sentencesSeparatorsMap = map[rune]struct{} {
-	'.': {},
-	'!': {},
-	'?': {},
-}
+var sentencesSeparators = set.NewSetWith(
+	'.',
+	'!',
+	'?',
+)
 
-func init() {
-	wordsSeparatorsMap = make(map[rune]struct{})
-	for _, sep := range wordSeparators {
-		wordsSeparatorsMap[sep] = struct{}{}
-	}
-}
+type rulet struct{}
 
-type rulet struct {}
-
-func (r rulet) IsWordSeparator(rune rune) bool {
-	_, ok := wordsSeparatorsMap[rune]
-	return ok
+func (r rulet) IsWordSeparator(ru rune) bool {
+	return wordSeparators.Contains(ru)
 }
 
-func (r rulet) IsSentenceSeparator(rune rune) bool {
-	_, ok := sentencesSeparatorsMap[rune]
-	return ok
+func (r rulet) IsSentenceSeparator(ru rune) bool {
+	return sentencesSeparators.Contains(ru)
 }
 
 var rule rulet
@@ -78,7 +72,7 @@ func TextRank(content string, stems map[string]string, language string) ([]rank.
 	if len(stems) == 0 {
 		stems = Stems(BagOfWords(content, language), language)
 	}
-	var stopWords map[string]struct{}
+	var stopWords set.Set
 	if language == "french" {
 		stopWords = StopWordsFrench
 	} else {
@@ -87,8 +81,7 @@ func TextRank(content string, stems map[string]string, language string) ([]rank.
 
 	l := &lang{
 		stopWords: func(w string) bool {
-			_, ok := stopWords[w]
-			return ok
+			return stopWords.Contains(w)
 		},
 		stems: stems,
 	}

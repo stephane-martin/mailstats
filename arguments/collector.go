@@ -1,6 +1,7 @@
 package arguments
 
 import (
+	"github.com/deckarep/golang-set"
 	"github.com/storozhukBM/verifier"
 	"github.com/urfave/cli"
 	"strings"
@@ -12,17 +13,16 @@ type CollectorArgs struct {
 	CollectorDir  string
 }
 
-var collectorsMap = map[string]struct{}{
-	"filesystem": {},
-	"channel":    {},
-	"redis":      {},
-	"rabbitmq":   {},
-}
+var collectorsMap = mapset.NewSetWith(
+	"filesystem",
+	"channel",
+	"redis",
+	"rabbitmq",
+)
 
 func (args *CollectorArgs) Verify() error {
 	v := verifier.New()
-	_, ok := collectorsMap[args.Type]
-	v.That(ok, "Unknown collector type")
+	v.That(collectorsMap.Contains(args.Type), "Unknown collector type")
 	return v.GetError()
 }
 

@@ -1,22 +1,21 @@
 package extractors
 
-var v struct{}
+import set "github.com/deckarep/golang-set"
 
-var exeTypes = map[string]struct{}{
-	"application/x-dosexec": v,
-	"application/x-msdownload": v,
-	"application/exe": v,
-	"application/x-exe": v,
-	"application/dos-exe": v,
-	"vms/exe": v,
-	"application/x-winexe": v,
-	"application/msdos-windows": v,
-	"application/x-msdos-program": v,
-	"application/x-executable": v,
-	"application/vnd.microsoft.portable-executable": v,
-}
+var exeTypes = set.NewSetWith(
+	"application/x-dosexec",
+	"application/x-msdownload",
+	"application/exe",
+	"application/x-exe",
+	"application/dos-exe",
+	"vms/exe",
+	"application/x-winexe",
+	"application/msdos-windows",
+	"application/x-msdos-program",
+	"application/x-executable",
+	"application/vnd.microsoft.portable-executable",
+)
 
 func IsExecutable(mimetype string) bool {
-	_, ok := exeTypes[mimetype]
-	return ok
+	return exeTypes.Contains(mimetype)
 }
