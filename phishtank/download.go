@@ -1,7 +1,7 @@
 package phishtank
 
 import (
-	"compress/bzip2"
+	"compress/gzip"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -83,7 +83,12 @@ L:
 }
 
 func parseFile(r io.Reader, entries chan *models.PhishtankEntry, errs chan error) {
-	decoder := xml.NewDecoder(bzip2.NewReader(r))
+	gzReader, err := gzip.NewReader(r)
+	if err != nil {
+		errs <- err
+		return
+	}
+	decoder := xml.NewDecoder(gzReader)
 	for {
 		token, err := decoder.Token()
 		if token == nil || err == io.EOF {
@@ -143,7 +148,7 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 		return entries, errs
 	}
 
-	url := fmt.Sprintf("http://data.phishtank.com/data/%s/online-valid.xml.bz2", applicationKey)
+	url := fmt.Sprintf("http://data.phishtank.com/data/%s/online-valid.xml.gz", applicationKey)
 
 	previousETag := ""
 	feedFilename := filepath.Join(cacheDir, "feed")
@@ -240,6 +245,7 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 			return
 		}
 		req = req.WithContext(ctx)
+		logger.Info("Downloading phishtank feed")
 		resp, err := client.Do(req)
 		if err != nil {
 			errs <- err
