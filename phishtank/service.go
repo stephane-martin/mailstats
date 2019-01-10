@@ -59,7 +59,11 @@ func (i *impl) Name() string {
 
 func (i *impl) Start(ctx context.Context) error {
 	for {
-		entries, errs := Download(ctx, i.cacheDir, i.appKey, i.logger)
+		entries := make(chan *models.PhishtankEntry)
+		errs := make(chan error)
+		go func() {
+			Download(ctx, entries, errs, i.cacheDir, i.appKey, i.logger)
+		}()
 		tree, err := BuildTree(ctx, entries, errs, i.logger)
 		if err == context.Canceled {
 			return err
@@ -90,6 +94,9 @@ func (i *impl) getTree() *Tree {
 }
 
 func NewPhishtank(active bool, appKey string, cacheDir string, logger log15.Logger) Phishtank {
+	if !active {
+		return nil
+	}
 	return &impl{
 		active: active,
 		logger: logger,
@@ -116,7 +123,6 @@ var Service = fx.Provide(func(lc fx.Lifecycle, params Params) Phishtank {
 		params.Args.Phishtank.CacheDir,
 		logger,
 	)
-
 	utils.Append(lc, p, logger)
 	return p
 })

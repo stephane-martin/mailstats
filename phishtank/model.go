@@ -18,7 +18,7 @@ type Entry struct {
 	Target       string       `xml:"target"`
 }
 
-func (e *Entry) Parse() *models.PhishtankEntry {
+func (e *Entry) Parse(gEntry *models.PhishtankEntry) *models.PhishtankEntry {
 	if e == nil {
 		return nil
 	}
@@ -30,13 +30,16 @@ func (e *Entry) Parse() *models.PhishtankEntry {
 	if err != nil {
 		return nil
 	}
-	gEntry := &models.PhishtankEntry{
-		URL:        strings.Replace(v, "&amp;", "&", -1),
-		PhishID:    e.PhishID,
-		DetailsURL: e.DetailURL,
-		Online:     strings.ToLower(strings.TrimSpace(e.Status.Online)) == "yes",
-		Verified:   strings.ToLower(strings.TrimSpace(e.Verification.Verified)) == "yes",
+	if gEntry == nil {
+		gEntry = new(models.PhishtankEntry)
 	}
+
+	gEntry.URL = strings.Replace(v, "&amp;", "&", -1)
+	gEntry.PhishID = e.PhishID
+	gEntry.DetailsURL = e.DetailURL
+	gEntry.Online = strings.ToLower(strings.TrimSpace(e.Status.Online)) == "yes"
+	gEntry.Verified = strings.ToLower(strings.TrimSpace(e.Verification.Verified)) == "yes"
+
 	vt, err := time.Parse(time.RFC3339, e.Verification.Time)
 	if err == nil {
 		gEntry.VerificationTime = &vt

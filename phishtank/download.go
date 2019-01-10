@@ -59,6 +59,9 @@ L:
 				entries = nil
 				continue L
 			}
+			if entry == nil {
+				continue L
+			}
 			e, ok := tree.Search([]byte(entry.URL))
 			if !ok {
 				tree.Insert([]byte(entry.URL), []*models.PhishtankEntry{entry})
@@ -75,6 +78,7 @@ L:
 				errs = nil
 				continue L
 			}
+
 			return nil, err
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -82,13 +86,14 @@ L:
 	}
 }
 
-func parseFile(r io.Reader, entries chan *models.PhishtankEntry, errs chan error) {
+func parseFile(r io.Reader, entries chan *models.PhishtankEntry, errs chan error, logger log15.Logger) {
 	gzReader, err := gzip.NewReader(r)
 	if err != nil {
 		errs <- err
 		return
 	}
 	decoder := xml.NewDecoder(gzReader)
+	var entry Entry
 	for {
 		token, err := decoder.Token()
 		if token == nil || err == io.EOF {
@@ -100,41 +105,41 @@ func parseFile(r io.Reader, entries chan *models.PhishtankEntry, errs chan error
 		}
 		if t, ok := token.(xml.StartElement); ok {
 			if t.Name.Local == "entry" {
-				var entry Entry
-				err := decoder.DecodeElement(&entry, &t)
-				if err == nil {
-					gEntry := entry.Parse()
-					if gEntry != nil {
-						entries <- gEntry
-					}
+				if decoder.DecodeElement(&entry, &t) == nil {
+					entries <- entry.Parse(nil)
+				}
+			} else if t.Name.Local == "total_entries" {
+				var totalEntries int
+				if decoder.DecodeElement(&totalEntries, &t) == nil {
+					logger.Info("Entries in phishtank feed", "nb_entries", totalEntries)
 				}
 			}
 		}
 	}
 }
 
-func Download(ctx context.Context, cacheDir string, applicationKey string, logger log15.Logger) (chan *models.PhishtankEntry, chan error) {
+func Download(ctx context.Context, entries chan *models.PhishtankEntry, errs chan error, cacheDir string, applicationKey string, logger log15.Logger) {
 	lock.Lock()
-	entries := make(chan *models.PhishtankEntry)
-	errs := make(chan error)
+
+	clean := func() {
+		close(errs)
+		close(entries)
+		lock.Unlock()
+	}
 
 	cacheDir = filepath.Join(cacheDir, "phishtank")
 	d, err := os.Open(cacheDir)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			errs <- err
-			close(errs)
-			close(entries)
-			lock.Unlock()
-			return entries, errs
+			clean()
+			return
 		}
 		err := os.MkdirAll(cacheDir, 0755)
 		if err != nil {
 			errs <- err
-			close(errs)
-			close(entries)
-			lock.Unlock()
-			return entries, errs
+			clean()
+			return
 		}
 	}
 	_ = d.Close()
@@ -142,10 +147,8 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 	applicationKey = strings.TrimSpace(applicationKey)
 	if applicationKey == "" {
 		errs <- errors.New("No phishtank application key provided")
-		close(errs)
-		close(entries)
-		lock.Unlock()
-		return entries, errs
+		clean()
+		return
 	}
 
 	url := fmt.Sprintf("http://data.phishtank.com/data/%s/online-valid.xml.gz", applicationKey)
@@ -158,10 +161,8 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 	if err != nil {
 		if !os.IsNotExist(err) {
 			errs <- err
-			close(errs)
-			close(entries)
-			lock.Unlock()
-			return entries, errs
+			clean()
+			return
 		}
 		logger.Info("No ETag for Phishtank feed on filesystem")
 	} else {
@@ -169,10 +170,8 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 		_ = etagFile.Close()
 		if err != nil {
 			errs <- err
-			close(errs)
-			close(entries)
-			lock.Unlock()
-			return entries, errs
+			clean()
+			return
 		}
 		previousETag = string(content)
 		logger.Info("Previous Phishtank ETag", "etag", previousETag)
@@ -182,28 +181,22 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 	req, err := http.NewRequest("HEAD", url, nil)
 	if err != nil {
 		errs <- err
-		close(errs)
-		close(entries)
-		lock.Unlock()
-		return entries, errs
+		clean()
+		return
 	}
 	req = req.WithContext(ctx)
 	resp, err := client.Do(req)
 	if err != nil {
 		errs <- err
-		close(errs)
-		close(entries)
-		lock.Unlock()
-		return entries, errs
+		clean()
+		return
 	}
 	defer resp.Body.Close()
 	etag := resp.Header.Get("ETag")
 	if etag == "" {
 		errs <- errors.New("phishtank HEAD response does not have a ETag header")
-		close(errs)
-		close(entries)
-		lock.Unlock()
-		return entries, errs
+		clean()
+		return
 	}
 	logger.Info("New ETag for Phishtank", "etag", etag)
 
@@ -213,31 +206,23 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 		if err != nil {
 			if !os.IsNotExist(err) {
 				errs <- err
-				close(errs)
-				close(entries)
-				lock.Unlock()
-				return entries, errs
+				clean()
+				return
 			}
 			logger.Info("No cached Phishtank feed on filesystem")
 		} else {
 			logger.Info("Using cached Phishtank feed")
 			go func() {
-				parseFile(feedFile, entries, errs)
-				close(errs)
-				close(entries)
+				defer clean()
+				parseFile(feedFile, entries, errs, logger)
 				_ = feedFile.Close()
-				lock.Unlock()
 			}()
-			return entries, errs
+			return
 		}
 	}
 
 	go func() {
-		defer func() {
-			close(errs)
-			close(entries)
-			lock.Unlock()
-		}()
+		defer clean()
 		client := utils.NewHTTPClient(3*time.Minute, 1, 3)
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
@@ -290,9 +275,9 @@ func Download(ctx context.Context, cacheDir string, applicationKey string, logge
 			return
 		}
 
-		parseFile(feedFile, entries, errs)
+		parseFile(feedFile, entries, errs, logger)
 		_ = feedFile.Close()
 	}()
 
-	return entries, errs
+	return
 }

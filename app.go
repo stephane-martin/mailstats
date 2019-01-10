@@ -541,7 +541,9 @@ func MakeApp() *cli.App {
 				cacheDir := c.GlobalString("cache-dir")
 				logger := log15.New()
 				logger.SetHandler(log15.StderrHandler)
-				entries, errs := phishtank.Download(context.Background(), cacheDir, appkey, logger)
+				entries := make(chan *models.PhishtankEntry)
+				errs := make(chan error)
+				phishtank.Download(context.Background(), entries, errs, cacheDir, appkey, logger)
 				tree, err := phishtank.BuildTree(context.Background(), entries, errs, logger)
 				if err != nil {
 					return cli.NewExitError(err.Error(), 1)
