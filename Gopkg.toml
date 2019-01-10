@@ -210,6 +210,14 @@
     name = "github.com/emersion/go-dkim"
     branch = "master"
 
+[[constraint]]
+    name = "github.com/gregjones/httpcache"
+    branch = "master"
+
+[[constraint]]
+    name = "github.com/plar/go-adaptive-radix-tree"
+    branch = "master"
+
 [prune]
 	go-tests = true
 	unused-packages = true

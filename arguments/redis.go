@@ -17,21 +17,22 @@ type RedisArgs struct {
 }
 
 func (args *RedisArgs) Verify() error {
+	if args.URL == "" {
+		return nil
+	}
 	v := verifier.New()
-	if args.URL != "" {
-		u, err := url.Parse(args.URL)
-		v.That(err == nil, "Invalid Redis connection URL")
-		v.That(u.Scheme == "redis", "In redis URL, scheme must be redis")
-		v.That(len(u.Host) > 0, "redis host is empty")
-		_, _, err = net.SplitHostPort(u.Host)
-		v.That(err == nil, fmt.Sprintf("The redis address is invalid: %s", err))
-		params := u.Query()
-		db := params.Get("db")
-		if len(db) > 0 {
-			dbnum, err := strconv.ParseInt(db, 10, 32)
-			v.That(err == nil, "db paramater must be an integer")
-			v.That(dbnum >= 0, "db paramater must be positive")
-		}
+	u, err := url.Parse(args.URL)
+	v.That(err == nil, "Invalid Redis connection URL")
+	v.That(u.Scheme == "redis", "In redis URL, scheme must be redis")
+	v.That(len(u.Host) > 0, "redis host is empty")
+	_, _, err = net.SplitHostPort(u.Host)
+	v.That(err == nil, fmt.Sprintf("The redis address is invalid: %s", err))
+	params := u.Query()
+	db := params.Get("db")
+	if len(db) > 0 {
+		dbnum, err := strconv.ParseInt(db, 10, 32)
+		v.That(err == nil, "db paramater must be an integer")
+		v.That(dbnum >= 0, "db paramater must be positive")
 	}
 	return v.GetError()
 }

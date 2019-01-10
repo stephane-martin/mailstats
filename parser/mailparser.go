@@ -8,6 +8,7 @@ import (
 	"github.com/ahmetb/go-linq"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/metrics"
+	"github.com/stephane-martin/mailstats/phishtank"
 	"go.uber.org/fx"
 	"io"
 	"mime"
@@ -39,7 +40,16 @@ type Parser interface {
 	ParseMany(context.Context, <-chan *models.IncomingMail, chan<- *models.FeaturesMail)
 }
 
-func NewParser(nbWorkers int, nodkim bool, collector collectors.Collector, consumer consumers.Consumer, geoip utils.GeoIP, tool extractors.ExifTool, logger log15.Logger) Parser {
+func NewParser(nbWorkers int,
+	nodkim bool,
+	collector collectors.Collector,
+	consumer consumers.Consumer,
+	geoip utils.GeoIP,
+	tool extractors.ExifTool,
+	phishtank phishtank.Phishtank,
+	logger log15.Logger,
+	) Parser {
+
 	parser := impl{
 		logger:    logger,
 		collector: collector,
@@ -48,6 +58,7 @@ func NewParser(nbWorkers int, nodkim bool, collector collectors.Collector, consu
 		tool:      tool,
 		geoip:     geoip,
 		noDKIM:    nodkim,
+		phishtank: phishtank,
 	}
 
 	return &parser
@@ -60,6 +71,7 @@ type Params struct {
 	Consumer  consumers.Consumer   `optional:"true"`
 	Tool      extractors.ExifTool  `optional:"true"`
 	GeoIP     utils.GeoIP          `optional:"true"`
+	Phishtank phishtank.Phishtank  `optional:"true"`
 	Logger    log15.Logger         `optional:"true"`
 }
 
@@ -73,7 +85,16 @@ var Service = fx.Provide(func(lc fx.Lifecycle, params Params) Parser {
 		logger = log15.New()
 		logger.SetHandler(log15.DiscardHandler())
 	}
-	p := NewParser(nbWorkers, params.Args.NoDKIM, params.Collector, params.Consumer, params.GeoIP, params.Tool, logger)
+	p := NewParser(
+		nbWorkers,
+		params.Args.NoDKIM,
+		params.Collector,
+		params.Consumer,
+		params.GeoIP,
+		params.Tool,
+		params.Phishtank,
+		logger,
+	)
 	utils.Append(lc, p, logger)
 	return p
 })
@@ -85,6 +106,7 @@ type impl struct {
 	consumer  consumers.Consumer
 	nbWorkers int
 	geoip     utils.GeoIP
+	phishtank phishtank.Phishtank
 	noDKIM    bool
 }
 
@@ -209,6 +231,7 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 	plain = filterPlain(plain)
 	urls := make([]string, 0)
 	images := make([]string, 0)
+	moreURLs := xurls.Relaxed().FindAllString(plain, -1)
 
 	var b strings.Builder
 	for _, h := range htmls {
@@ -220,6 +243,7 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 		urls = append(urls, eURLs...)
 		images = append(images, eImages...)
 	}
+
 	ahtml := strings.TrimSpace(b.String())
 	if len(ahtml) > 0 && (len(ahtml) >= (len(plain) / 2)) {
 		plain = ahtml
@@ -227,15 +251,17 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 	// unicode normalization
 	plain = utils.Normalize(plain)
 
-	moreURLs := xurls.Relaxed().FindAllString(plain, -1)
 	moreURLs = append(moreURLs, xurls.Relaxed().FindAllString(ahtml, -1)...)
 	for _, u := range moreURLs {
 		v, err := url.PathUnescape(u)
 		if err == nil {
-			features.Urls = append(features.Urls, v)
+			urls = append(features.URLs, strings.Replace(v, "&amp;", "&", -1))
+		} else {
+			p.logger.Debug("Error decoding URL", "error", err, "url", u)
 		}
 	}
-	features.Urls = distinct(urls)
+	features.URLs = distinct(urls)
+	features.PhishtankURLS = p.phishtank.URLMany(features.URLs)
 
 	emails := findEmailAddresses(plain)
 	emails = append(emails, findEmailAddresses(ahtml)...)
@@ -282,7 +308,6 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 			features.From.Error = err.Error()
 		}
 		delete(features.Headers, "from")
-
 	}
 
 	if len(features.Headers["to"]) > 0 {
@@ -290,8 +315,8 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 		if err == nil {
 			for _, pAddr := range pAddrs {
 				features.To = append(features.To, models.Address{
-					Name:                pAddr.Name,
-					Address:             pAddr.Address,
+					Name:    pAddr.Name,
+					Address: pAddr.Address,
 				})
 			}
 			delete(features.Headers, "to")
@@ -391,7 +416,7 @@ func nameContainsAddress(fullAddr *mail.Address) (bool, bool, bool, bool) {
 }
 
 func getDomainFromAddress(addr string) string {
-	u, err := url.Parse("mailto://"+addr)
+	u, err := url.Parse("mailto://" + addr)
 	if err != nil {
 		return ""
 	}

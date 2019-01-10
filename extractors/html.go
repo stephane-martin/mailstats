@@ -26,7 +26,7 @@ func HTML2Text(h string) (text string, links []string, images []string) {
 					if strings.ToLower(attr.Key) == "href" {
 						v, err := url.PathUnescape(attr.Val)
 						if err == nil {
-							links = append(links, v)
+							links = append(links, strings.Replace(v, "&amp;", "&", -1))
 						}
 						break
 					}
@@ -37,7 +37,7 @@ func HTML2Text(h string) (text string, links []string, images []string) {
 					if strings.ToLower(attr.Key) == "src" {
 						v, err := url.PathUnescape(attr.Val)
 						if err == nil {
-							images = append(images, v)
+							images = append(images, strings.Replace(v, "&amp;", "&", -1))
 						}
 						break
 					}

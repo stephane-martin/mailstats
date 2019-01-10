@@ -22,9 +22,11 @@ type Args struct {
 	Kafka         KafkaArgs
 	GeoIP         GeoIPArgs
 	Elasticsearch ElasticsearchArgs
+	Phishtank     PhishtankArgs
 	Secret        *memguard.LockedBuffer `json:"-"`
 	NbParsers     int
 	NoDKIM        bool
+	CacheDir      string
 }
 
 type argsI interface {
@@ -48,6 +50,7 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		&args.Kafka,
 		&args.GeoIP,
 		&args.Elasticsearch,
+		&args.Phishtank,
 	}
 
 	for _, i := range toInit {
@@ -71,7 +74,10 @@ func GetArgs(c *cli.Context) (*Args, error) {
 		args.NbParsers = runtime.NumCPU()
 	}
 	args.NoDKIM = c.GlobalBool("no-dkim")
-
+	args.CacheDir = strings.TrimSpace(c.GlobalString("cache-dir"))
+	if args.CacheDir == "" {
+		args.CacheDir = "/var/lib/mailstats"
+	}
 	return args, nil
 }
 

@@ -21,13 +21,14 @@ type FeaturesMail struct {
 	TimeHeader  string              `json:"time_header,omitempty"`
 	Received    []ReceivedElement   `json:"received,omitempty"`
 	// TODO: check that From is consistent/scam
-	From   *FromAddress    `json:"from,omitempty"`
-	To     []Address       `json:"to,omitempty" yaml:",flow"`
-	Title  string          `json:"title,omitempty"`
-	Emails []string        `json:"emails,omitempty"`
-	Urls   []string        `json:"urls,omitempty"`
-	Images []string        `json:"images,omitempty"`
-	DKIM   *DKIMValidation `json:"dkim,omitempty"`
+	From          *FromAddress      `json:"from,omitempty"`
+	To            []Address         `json:"to,omitempty" yaml:",flow"`
+	Title         string            `json:"title,omitempty"`
+	Emails        []string          `json:"emails,omitempty"`
+	URLs          []string          `json:"urls,omitempty"`
+	PhishtankURLS []*PhishtankEntry `json:"phishtank_urls,omitempty"`
+	Images        []string          `json:"images,omitempty"`
+	DKIM          *DKIMValidation   `json:"dkim,omitempty"`
 }
 
 func (f *FeaturesMail) Encode(indent bool) ([]byte, error) {
@@ -89,6 +90,16 @@ type GeoIPResult struct {
 type LatLon struct {
 	Latitude  float64 `json:"lat"`
 	Longitude float64 `json:"lon"`
+}
+
+type PhishtankEntry struct {
+	URL              string     `json:"url,omitempty"`
+	PhishID          int        `json:"phish_id"`
+	DetailsURL       string     `json:"details_url,omitempty"`
+	SubmissionTime   *time.Time `json:"submission_time,omitempty"`
+	Online           bool       `json:"online"`
+	Verified         bool       `json:"verified"`
+	VerificationTime *time.Time `json:"verification_time,omitempty"`
 }
 
 type Attachment struct {

@@ -9,6 +9,7 @@ import (
 	"github.com/stephane-martin/mailstats/forwarders"
 	"github.com/stephane-martin/mailstats/logging"
 	"github.com/stephane-martin/mailstats/parser"
+	"github.com/stephane-martin/mailstats/phishtank"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
 	"go.uber.org/fx"
@@ -28,6 +29,7 @@ func Builder(c *cli.Context, args *arguments.Args, invoke fx.Option, logger log1
 		IMAPMonitorService,
 		utils.GeoIPService,
 		utils.RedisService,
+		phishtank.Service,
 		fx.Provide(
 			func() *cli.Context { return c },
 			func() *arguments.Args { return args },

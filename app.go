@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/inconshreveable/log15"
 	"github.com/russross/blackfriday"
 	"github.com/stephane-martin/mailstats/actions"
 	"github.com/stephane-martin/mailstats/arguments"
 	"github.com/stephane-martin/mailstats/extractors"
+	"github.com/stephane-martin/mailstats/models"
+	"github.com/stephane-martin/mailstats/phishtank"
 	"github.com/stephane-martin/mailstats/services"
 	"github.com/stephane-martin/mailstats/utils"
 	"github.com/urfave/cli"
@@ -106,6 +110,12 @@ func MakeApp() *cli.App {
 			EnvVar: "MAILSTATS_COLLECTOR_DIRECTORY",
 		},
 		cli.StringFlag{
+			Name: "cache-dir",
+			Value: "/var/lib/mailstats",
+			Usage: "Cache directory for HTTP requests",
+			EnvVar: "MAILSTATS_CACHE_DIR",
+		},
+		cli.StringFlag{
 			Name:   "redis-collector-key",
 			Value:  "mailstats.collector",
 			Usage:  "When using redis as the collector, the key to use",
@@ -196,6 +206,17 @@ func MakeApp() *cli.App {
 			Name: "no-dkim",
 			Usage: "Do not perform DKIM validation",
 			EnvVar: "MAILSTATS_NO_DKIM",
+		},
+		cli.BoolFlag{
+			Name: "phishtank",
+			Usage: "Identify phishing URLs with Phishtank",
+			EnvVar: "MAILSTATS_PHISHTANK",
+		},
+		cli.StringFlag{
+			Name: "phishtank-appkey",
+			Usage: "The phishtank application key",
+			EnvVar: "MAILSTATS_PHISHTANK_APPKEY",
+			Value: "",
 		},
 
 	}
@@ -502,6 +523,35 @@ func MakeApp() *cli.App {
 					}
 					fmt.Println(t.MIME.Value)
 				}
+				return nil
+			},
+		},
+		{
+			Name: "phishtank",
+			Usage: "Download and parse phishtank feed",
+			Flags: []cli.Flag{
+				cli.StringFlag{
+					Name: "appkey",
+					Usage: "phishtank application key",
+					Value: "",
+				},
+			},
+			Action: func(c *cli.Context) error {
+				appkey := c.String("appkey")
+				cacheDir := c.GlobalString("cache-dir")
+				logger := log15.New()
+				logger.SetHandler(log15.StderrHandler)
+				entries, errs := phishtank.Download(context.Background(), cacheDir, appkey, logger)
+				tree, err := phishtank.BuildTree(context.Background(), entries, errs, logger)
+				if err != nil {
+					return cli.NewExitError(err.Error(), 1)
+				}
+				tree.Walk(func(url string, entries []*models.PhishtankEntry) bool {
+					if len(entries) > 1 {
+						fmt.Println(len(entries), url)
+					}
+					return true
+				})
 				return nil
 			},
 		},

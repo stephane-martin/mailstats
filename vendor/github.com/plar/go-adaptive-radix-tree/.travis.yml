@@ -1,0 +1,24 @@
+language: go
+sudo: false
+
+go:
+- 1.5
+- 1.6
+- 1.7
+- 1.8
+- tip
+
+# matrix:
+#   allow_failures:
+#     - go: 1.1.2
+
+install:
+  - make bootstrap
+
+before_script:
+  - go vet ./...
+
+script:
+  - make
+  - make test-cover-builder
+  - $HOME/gopath/bin/goveralls -coverprofile=/tmp/art_coverage.out -service=travis-ci -repotoken $COVERALLS_TOKEN
