@@ -5,11 +5,6 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/ahmetb/go-linq"
-	"github.com/stephane-martin/mailstats/arguments"
-	"github.com/stephane-martin/mailstats/metrics"
-	"github.com/stephane-martin/mailstats/phishtank"
-	"go.uber.org/fx"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -18,6 +13,12 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/ahmetb/go-linq"
+	"github.com/stephane-martin/mailstats/arguments"
+	"github.com/stephane-martin/mailstats/metrics"
+	"github.com/stephane-martin/mailstats/phishtank"
+	"go.uber.org/fx"
 
 	"github.com/oklog/ulid"
 	"github.com/russross/blackfriday"
@@ -48,7 +49,7 @@ func NewParser(nbWorkers int,
 	tool extractors.ExifTool,
 	phishtank phishtank.Phishtank,
 	logger log15.Logger,
-	) Parser {
+) Parser {
 
 	parser := impl{
 		logger:    logger,
@@ -261,7 +262,9 @@ func (p *impl) Parse(i *models.IncomingMail) (features *models.FeaturesMail, err
 		}
 	}
 	features.URLs = distinct(urls)
-	features.PhishtankURLS = p.phishtank.URLMany(features.URLs)
+	if p.phishtank != nil {
+		features.PhishtankURLS = p.phishtank.URLMany(features.URLs)
+	}
 
 	emails := findEmailAddresses(plain)
 	emails = append(emails, findEmailAddresses(ahtml)...)
